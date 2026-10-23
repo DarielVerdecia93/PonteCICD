@@ -3,11 +3,23 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
 # IIS completo: toda la gestion de sitio/pool/binding se hace con el modulo WebAdministration
-# (proveedor IIS:\). Si no esta disponible, IIS no esta instalado y no podemos operar.
+# (proveedor IIS:\). El import puede fallar por dos motivos distintos, hay que distinguirlos:
+#  - el modulo no existe  -> IIS no instalado;
+#  - el modulo existe pero el proceso no esta elevado -> acceso a la config de IIS denegado.
 try {
     Import-Module WebAdministration -ErrorAction Stop
+    # Forzar el acceso al proveedor IIS:\ aqui para que el fallo de elevacion salte ya, con mensaje claro.
+    $null = Get-ChildItem 'IIS:\Sites' -ErrorAction Stop
 } catch {
-    throw 'WebAdministration no disponible: instale IIS (Web-Server, Web-Mgmt-Console).'
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $hasModule = [bool](Get-Module -ListAvailable WebAdministration)
+    if (-not $hasModule) {
+        throw 'IIS no instalado: active el rol IIS (Web-Server, Web-Mgmt-Console, Web-Scripting-Tools) y reinicie.'
+    } elseif (-not $isAdmin) {
+        throw 'LegadosCI no se ejecuta como administrador: la gestion de IIS requiere elevacion. Instale/arranque el servicio con una cuenta del grupo Administradores (vea install-service.ps1) o ejecute el panel como administrador.'
+    } else {
+        throw "No se pudo acceder a la configuracion de IIS: $($_.Exception.Message)"
+    }
 }
 
 $Root = Split-Path $PSScriptRoot -Parent
