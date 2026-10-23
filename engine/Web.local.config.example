@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Transformacion XDT que se aplica al Web.config publicado en cada deploy.
+  Copia este fichero como Web.local.config y ajusta los valores de tu entorno.
+  Web.local.config no esta en el repo del proyecto: aqui van las credenciales de la BD administrada.
+-->
+<configuration xmlns:xdt="http://schemas.microsoft.com/XML-Document-Transform">
+  <connectionStrings>
+    <add name="BalcaoUnicoContext"
+         connectionString="Data Source=SERVIDOR;Initial Catalog=BASE_DE_DATOS;User ID=USUARIO;Password=PASSWORD;Application Name=BalcaoUnico"
+         xdt:Transform="SetAttributes(connectionString)" xdt:Locator="Match(name)" />
+  </connectionStrings>
+  <appSettings>
+    <add key="SiteURL" value="http://localhost:8090/"
+         xdt:Transform="SetAttributes(value)" xdt:Locator="Match(key)" />
+  </appSettings>
+</configuration>

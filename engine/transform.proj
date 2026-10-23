@@ -1,0 +1,7 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Transform">
+  <!-- Aplica una transformacion XDT (Web.local.config) sobre el Web.config publicado. -->
+  <UsingTask TaskName="TransformXml" AssemblyFile="$(TasksDll)" />
+  <Target Name="Transform">
+    <TransformXml Source="$(Source)" Transform="$(Transform)" Destination="$(Destination)" />
+  </Target>
+</Project>

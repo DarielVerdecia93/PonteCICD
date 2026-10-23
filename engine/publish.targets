@@ -1,0 +1,31 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Se inyecta en la compilacion con /p:CustomAfterMicrosoftCommonTargets, sin modificar el .csproj.
+    Quita del paquete publicado las carpetas de $(DeployExcludeFolders) (separadas por ';').
+  -->
+  <Target Name="DeployExcludeFolders" BeforeTargets="CopyAllFilesToSingleFolderForAspNetCompileMerge;CopyAllFilesToSingleFolderForPackage" Condition="'$(DeployExcludeFolders)' != ''">
+    <PropertyGroup>
+      <_DeployExcludeRegex>(?i)^($(DeployExcludeFolders.Replace(';', '|')))\\</_DeployExcludeRegex>
+    </PropertyGroup>
+    <ItemGroup>
+      <_DeployExcludedFile Include="@(FilesForPackagingFromProject)"
+                           Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(FilesForPackagingFromProject.DestinationRelativePath)', '$(_DeployExcludeRegex)'))" />
+      <FilesForPackagingFromProject Remove="@(_DeployExcludedFile)" />
+    </ItemGroup>
+    <Message Importance="high" Text="Excluidos del despliegue: @(_DeployExcludedFile->Count()) ficheros de $(DeployExcludeFolders)" />
+  </Target>
+
+  <!--
+    Anade al paquete ficheros que el proyecto no publica pero que la app necesita en runtime
+    (p. ej. ficheros referenciados desde App_GlobalResources). $(DeployIncludeFiles): rutas/globs relativas al proyecto.
+  -->
+  <Target Name="DeployIncludeFiles" BeforeTargets="CopyAllFilesToSingleFolderForAspNetCompileMerge;CopyAllFilesToSingleFolderForPackage" Condition="'$(DeployIncludeFiles)' != ''">
+    <ItemGroup>
+      <_DeployExtraFile Include="$(DeployIncludeFiles)" />
+      <FilesForPackagingFromProject Remove="@(_DeployExtraFile->'%(FullPath)')" />
+      <FilesForPackagingFromProject Include="@(_DeployExtraFile->'%(FullPath)')"
+                                    DestinationRelativePath="$([MSBuild]::MakeRelative('$(MSBuildProjectDirectory)\', '%(_DeployExtraFile.FullPath)'))" />
+    </ItemGroup>
+    <Message Importance="high" Text="Incluidos en el despliegue: @(_DeployExtraFile->Count()) ficheros de $(DeployIncludeFiles)" />
+  </Target>
+</Project>

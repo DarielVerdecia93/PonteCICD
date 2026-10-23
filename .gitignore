@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# ENSE CI — .gitignore
+# Se versiona: codigo del servicio (src\EnseCI), motor PowerShell (engine\),
+# scripts, README y ci.json (config base, sin credenciales).
+# NO se versiona: artefactos de build, estado de runtime y secretos.
+# ---------------------------------------------------------------------------
+
+# --- Secretos y config local ------------------------------------------------
+# Las transformaciones Web.local.config llevan connection strings: nunca subir.
+Web.local.config
+**/Web.local.config
+# La plantilla de ejemplo SI se versiona (no tiene secretos reales).
+!engine/Web.local.config.example
+
+# --- Artefactos de build .NET -----------------------------------------------
+[Bb]in/
+[Oo]bj/
+*.user
+
+# --- Servicio publicado (se regenera con: dotnet publish src\EnseCI -o service)
+/service/
+
+# --- Estado de runtime del CI -----------------------------------------------
+# Mirror del remoto, carpeta de trabajo, historial de ejecuciones y entornos
+# desplegados (sitios, backups) son estado de la maquina, no del repo.
+/mirror.git/
+/work/
+/runs/
+/envs/
+# El .lock del deploy, por si quedara fuera de /work.
+.lock
+
+# --- Artefactos de agentes / workflow ---------------------------------------
+/.agents/
+
+# --- Sistema operativo / editores -------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.vs/
+.vscode/
+.idea/
+*.swp

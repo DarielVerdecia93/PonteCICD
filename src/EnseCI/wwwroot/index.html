@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ENSE CI</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --panel2: #f1f3f6; --text: #1d2330; --muted: #6b7385; --border: #e1e4ea;
+    --accent: #2f6fde; --ok: #1f9d55; --bad: #d64545; --warn: #c98a00; --mono: ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --panel: #1c2028; --panel2: #232833; --text: #e4e7ee; --muted: #8b93a5; --border: #2c323d; --accent: #5b8ff0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .live.on i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  header .meta { color: var(--muted); font-size: 12px; margin-right: auto; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 20px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  h2 .grow { flex: 1; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .envs { display: grid; gap: 12px; }
+  .env { display: grid; grid-template-columns: 1fr 230px; gap: 12px 20px; }
+  .env.busy { border-color: var(--accent); }
+  .env-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .env-title b { font-size: 15px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--ok); }
+  .tag { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .tag.local { color: #8a5cf6; border-color: #8a5cf6; }
+  .tag.warn { color: var(--warn); border-color: var(--warn); }
+  .tag.busy { color: var(--accent); border-color: var(--accent); }
+  .rows { display: grid; grid-template-columns: 105px 1fr; gap: 4px 10px; font-size: 13px; margin-top: 10px; }
+  .rows > span:nth-child(odd) { color: var(--muted); }
+  code, .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .status { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--panel2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .status.run { color: var(--accent); }
+  .status.wait { color: var(--warn); }
+  .spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  details.pending { margin-top: 8px; font-size: 13px; }
+  details.pending summary { cursor: pointer; color: var(--warn); }
+  details.pending ul { margin: 6px 0 0; padding-left: 18px; }
+  details.pending li { margin: 2px 0; }
+  .actions { display: flex; flex-direction: column; gap: 6px; }
+  .actions .row { display: flex; gap: 6px; }
+  .actions .row > * { flex: 1; min-width: 0; }
+  button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  tr.job { cursor: pointer; }
+  tr.job:hover td { background: var(--panel2); }
+  .st-Succeeded { color: var(--ok); } .st-Failed { color: var(--bad); } .st-Running { color: var(--accent); } .st-Queued { color: var(--muted); }
+  pre.log { margin: 0; max-height: 480px; overflow: auto; background: #0f1218; color: #d5dae3; padding: 12px; border-radius: 6px; font: 12px/1.4 var(--mono); white-space: pre-wrap; }
+  .err { color: var(--bad); }
+  a { color: var(--accent); }
+  .empty { color: var(--muted); text-align: center; padding: 28px; }
+
+  /* branch picker */
+  dialog { border: 1px solid var(--border); border-radius: 12px; padding: 0; width: min(760px, calc(100vw - 32px)); background: var(--panel); color: var(--text); }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  .picker-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; gap: 10px; }
+  .picker-head .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .picker-head input[type=search] { flex: 1; min-width: 200px; padding: 8px 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .branch-list { max-height: 52vh; overflow: auto; padding: 6px 8px; }
+  .group > .group-name { font-size: 12px; color: var(--muted); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; user-select: none; }
+  .group.closed .branch { display: none; }
+  .branch { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .branch:hover { background: var(--panel2); }
+  .branch.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .branch .bn { font-family: var(--mono); font-size: 13px; }
+  .branch .when { font-size: 12px; color: var(--muted); text-align: right; }
+  .branch .sub { grid-column: 1 / -1; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .picker-foot .grow { flex: 1; }
+  .picker-foot input[name=name] { width: 170px; }
+
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; box-shadow: 0 6px 20px rgb(0 0 0 / .18); max-width: 380px; font-size: 13px; }
+  .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+  @media (max-width: 760px) { .env { grid-template-columns: 1fr; } header { flex-wrap: wrap; } main { padding: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ENSE CI</h1>
+  <span class="live" id="live"><i></i><span>conectando…</span></span>
+  <span class="meta" id="meta"></span>
+  <button id="fetch" title="Comprobar ahora el remoto y el repo local">Buscar cambios</button>
+  <button class="primary" id="newEnv">+ Nuevo entorno</button>
+</header>
+<main>
+  <section>
+    <h2>Entornos</h2>
+    <div class="envs" id="envs"></div>
+  </section>
+
+  <section class="card">
+    <h2>Ejecuciones</h2>
+    <table>
+      <thead><tr><th>Inicio</th><th>Entorno</th><th>Acción</th><th>Origen</th><th>Commit</th><th>Estado</th><th>Resultado</th></tr></thead>
+      <tbody id="jobs"></tbody>
+    </table>
+  </section>
+
+  <section class="card" id="logCard" hidden>
+    <h2><span id="logTitle">Log</span><span class="grow"></span><button id="closeLog">Cerrar</button></h2>
+    <pre class="log" id="log"></pre>
+  </section>
+</main>
+
+<dialog id="picker">
+  <form method="dialog" id="pickerForm">
+    <div class="picker-head">
+      <b id="pickerTitle">Elegir rama</b>
+      <div class="row">
+        <input type="search" name="q" placeholder="Buscar rama, autor o mensaje…" autocomplete="off">
+        <div class="seg" id="sourceSeg">
+          <button type="button" data-source="remote" class="on">Remoto</button>
+          <button type="button" data-source="local">Mi repo local</button>
+        </div>
+      </div>
+    </div>
+    <div class="branch-list" id="branchList"></div>
+    <div class="picker-foot" id="pickerFoot">
+      <span class="muted" id="pickedLabel">Ninguna rama seleccionada</span>
+      <span class="grow"></span>
+      <span data-new-only><input name="name" placeholder="nombre del entorno"></span>
+      <select name="configuration" data-new-only>
+        <option>Desenvolvimento</option><option>Qualidade</option><option>Producao</option><option>Release</option><option>Debug</option>
+      </select>
+      <label data-new-only class="muted"><input type="checkbox" name="autoDeploy" checked> auto-deploy</label>
+      <button value="cancel" formnovalidate>Cancelar</button>
+      <button class="primary" id="pickerOk" value="ok" disabled>Crear y desplegar</button>
+    </div>
+    <div class="err" id="pickerErr" style="padding:0 16px 12px"></div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const short = c => c ? c.slice(0, 7) : '—';
+const ACTIONS = { Deploy: 'Deploy', Rollback: 'Rollback', Start: 'Arrancar', Stop: 'Parar', Restart: 'Reiniciar', Purge: 'Eliminar' };
+const SOURCE = { remote: 'remoto', local: 'local' };
+
+function ago(d) {
+  if (!d) return '—';
+  const s = Math.round((Date.now() - new Date(d)) / 1000);
+  if (s < 0) return `en ${-s}s`;
+  if (s < 60) return `hace ${s}s`;
+  if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
+  return `hace ${Math.floor(s / 86400)} d`;
+}
+const fmt = d => d ? new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+let state = null, branches = [], jobs = [], openLog = null, knownJobs = new Map();
+
+async function api(method, url, body) {
+  const r = await fetch(url, body ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { method });
+  if (!r.ok) throw new Error((await r.text()).replace(/^"|"$/g, '') || r.statusText);
+  return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
+}
+
+function toast(text, kind = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.innerHTML = text;
+  $('#toasts').append(el);
+  setTimeout(() => el.remove(), 7000);
+}
+
+// ---------------------------------------------------------------- environments
+
+function statusLine(e) {
+  const j = e.job;
+  if (j) {
+    const what = j.status === 'Queued' ? 'En cola' : (j.step || 'Iniciando');
+    const target = j.commit ? ` · <code>${short(j.commit)}</code>${j.subject ? ' ' + esc(j.subject) : ''}` : '';
+    return `<div class="status run"><span class="spinner"></span><span><b>${ACTIONS[j.kind]}</b> · ${esc(what)}${target}</span>
+      <a href="#" data-log="${j.id}" style="margin-left:auto">ver log</a></div>`;
+  }
+  if (e.autoDeployAt) {
+    const secs = Math.max(0, Math.round((new Date(e.autoDeployAt) - Date.now()) / 1000));
+    return `<div class="status wait"><span class="spinner"></span><span>Cambios detectados · deploy automático en <b data-countdown="${e.autoDeployAt}">${secs}s</b> (espera por si llegan más commits)</span></div>`;
+  }
+  return '';
+}
+
+function renderEnv(e) {
+  const d = e.deployed, h = e.head;
+  const upToDate = d && h && d.commit === h.commit;
+  const backups = e.backups.map(b => `<option value="${esc(b.name)}">${fmt(b.date)} · ${esc(b.commit.slice(0, 7))} · ${esc(b.reason)}</option>`).join('');
+  const busy = !!e.job;
+  const pending = e.pending?.length
+    ? `<details class="pending"><summary>${e.pending.length}${e.pending.length >= 30 ? '+' : ''} commit(s) sin desplegar</summary><ul>${
+        e.pending.map(c => `<li><code>${short(c.commit)}</code> ${esc(c.subject)} <span class="muted">· ${esc(c.author)} · ${ago(c.date)}</span></li>`).join('')
+      }</ul></details>` : '';
+  return `<div class="card env ${busy ? 'busy' : ''}" data-env="${esc(e.name)}">
+    <div>
+      <div class="env-title">
+        <span class="dot ${e.running ? 'on' : ''}" title="${e.running ? 'En ejecución' : 'Parado'}"></span>
+        <b>${esc(e.name)}</b>
+        <span class="tag mono ${e.source === 'local' ? 'local' : ''}" title="Origen: ${SOURCE[e.source]}">${esc(e.branch)}${e.source === 'local' ? ' · local' : ''}</span>
+        <span class="tag">${esc(e.configuration)}</span>
+        <span class="tag">${e.autoDeploy ? 'auto-deploy' : 'manual'}</span>
+        ${!h ? '<span class="tag warn">la rama ya no existe</span>' : upToDate ? '<span class="tag">al día</span>' : d ? '<span class="tag warn">desactualizado</span>' : ''}
+      </div>
+      <div class="rows">
+        <span>URL</span><span><a href="${esc(e.url)}" target="_blank">${esc(e.url)}</a></span>
+        <span>Desplegado</span><span>${d ? `<code>${esc(d.shortCommit)}</code> ${esc(d.subject)} <span class="muted">· ${ago(d.deployedAt)}</span>` : '<span class="muted">nada todavía</span>'}</span>
+        <span>Último commit</span><span>${h ? `<code>${short(h.commit)}</code> ${esc(h.subject)} <span class="muted">· ${esc(h.author)} · ${ago(h.date)}</span>` : '—'}</span>
+      </div>
+      ${pending}
+      ${statusLine(e)}
+    </div>
+    <div class="actions">
+      <button class="primary" data-act="deploy" ${busy ? 'disabled' : ''}>${upToDate ? 'Redesplegar' : 'Desplegar ahora'}</button>
+      <div class="row">
+        <select data-backup ${e.backups.length ? '' : 'disabled'} title="Backups">${backups || '<option>sin backups</option>'}</select>
+      </div>
+      <button data-act="rollback" ${busy || !e.backups.length ? 'disabled' : ''}>Restaurar backup</button>
+      <div class="row">
+        <button data-act="${e.running ? 'stop' : 'start'}" ${busy ? 'disabled' : ''}>${e.running ? 'Parar' : 'Arrancar'}</button>
+        <button data-act="restart" ${busy ? 'disabled' : ''}>Reiniciar</button>
+      </div>
+      <div class="row">
+        <button data-act="toggleAuto">${e.autoDeploy ? 'Pasar a manual' : 'Activar auto'}</button>
+        <button data-act="changeBranch">Cambiar rama</button>
+      </div>
+      <button class="danger" data-act="delete" ${busy ? 'disabled' : ''}>Eliminar entorno</button>
+    </div>
+  </div>`;
+}
+
+function renderJobs() {
+  $('#jobs').innerHTML = jobs.map(j => `<tr class="job" data-job="${j.id}">
+      <td>${fmt(j.startedAt || j.queuedAt)}</td><td>${esc(j.env)}</td><td>${ACTIONS[j.kind] || j.kind}</td><td>${esc(j.trigger)}</td>
+      <td><code>${short(j.commit)}</code></td><td class="st-${j.status}">${j.status}${j.step ? ' · ' + esc(j.step) : ''}</td><td>${esc(j.summary)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="muted">Sin ejecuciones.</td></tr>';
+}
+
+function notifyFinished() {
+  for (const j of jobs) {
+    const before = knownJobs.get(j.id);
+    if (before && before !== j.status && (j.status === 'Succeeded' || j.status === 'Failed')) {
+      const ok = j.status === 'Succeeded';
+      toast(`<b>${esc(j.env)}</b> · ${ACTIONS[j.kind]} ${ok ? 'completado' : 'fallido'}<br><span class="muted">${esc(j.summary)}</span>`, ok ? 'ok' : 'bad');
+    }
+    knownJobs.set(j.id, j.status);
+  }
+}
+
+async function refresh() {
+  try {
+    [state, jobs] = await Promise.all([api('GET', '/api/state'), api('GET', '/api/jobs')]);
+    $('#meta').innerHTML = `remoto revisado ${ago(state.lastCheck)} (cada ${state.pollIntervalSec}s)` +
+      (state.localRepoPath ? ` · vigilando repo local` : '') +
+      (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
+    $('#envs').innerHTML = state.environments.length
+      ? state.environments.map(renderEnv).join('')
+      : '<div class="card empty">No hay entornos todavía.<br><br><button class="primary" onclick="openPicker()">+ Crear el primero eligiendo una rama</button></div>';
+    renderJobs();
+    notifyFinished();
+    if (openLog) await loadLog();
+  } catch (err) {
+    $('#meta').innerHTML = `<span class="err">Sin conexión con el servicio: ${esc(err.message)}</span>`;
+  }
+}
+
+let refreshTimer = null;
+const scheduleRefresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
+
+// Live updates (Server-Sent Events) + a slow fallback poll for things the server can't notice (e.g. IIS Express killed by hand).
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onopen = () => { $('#live').className = 'live on'; $('#live span').textContent = 'en vivo'; };
+  es.onmessage = scheduleRefresh;
+  es.onerror = () => { $('#live').className = 'live'; $('#live span').textContent = 'reconectando…'; };
+}
+setInterval(refresh, 15000);
+setInterval(() => document.querySelectorAll('[data-countdown]').forEach(el => {
+  el.textContent = Math.max(0, Math.round((new Date(el.dataset.countdown) - Date.now()) / 1000)) + 's';
+}), 1000);
+
+async function loadLog() {
+  const pre = $('#log');
+  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+  pre.textContent = await api('GET', `/api/jobs/${openLog}/log`);
+  const j = jobs.find(x => x.id === openLog);
+  $('#logTitle').textContent = j ? `Log · ${j.env} · ${ACTIONS[j.kind] || j.kind} · ${j.status}` : 'Log';
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+function showLog(id) {
+  openLog = id;
+  $('#logCard').hidden = false;
+  $('#log').textContent = '';
+  loadLog().then(() => $('#logCard').scrollIntoView({ behavior: 'smooth' }));
+}
+
+$('#closeLog').onclick = () => { openLog = null; $('#logCard').hidden = true; };
+$('#jobs').addEventListener('click', ev => { const row = ev.target.closest('tr[data-job]'); if (row) showLog(row.dataset.job); });
+
+$('#envs').addEventListener('click', async ev => {
+  const link = ev.target.closest('[data-log]');
+  if (link) { ev.preventDefault(); showLog(link.dataset.log); return; }
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) return;
+  const card = btn.closest('[data-env]'), name = card.dataset.env, act = btn.dataset.act;
+  const env = state.environments.find(e => e.name === name);
+  try {
+    if (act === 'rollback') {
+      const backup = card.querySelector('[data-backup]').value;
+      if (!confirm(`¿Restaurar ${backup} en ${name}?\nLa versión actual se guardará antes en un zip.`)) return;
+      await api('POST', `/api/envs/${name}/rollback?arg=${encodeURIComponent(backup)}`);
+    } else if (act === 'delete') {
+      if (!confirm(`¿Eliminar el entorno ${name}?\nSe para el sitio y se borran su carpeta y sus backups.`)) return;
+      await api('DELETE', `/api/envs/${name}`);
+    } else if (act === 'toggleAuto') {
+      await api('PUT', `/api/envs/${name}`, { autoDeploy: !env.autoDeploy });
+    } else if (act === 'changeBranch') {
+      openPicker(env);
+      return;
+    } else {
+      await api('POST', `/api/envs/${name}/${act}`);
+    }
+    refresh();
+  } catch (err) { toast(esc(err.message), 'bad'); }
+});
+
+// ---------------------------------------------------------------- branch picker
+
+const picker = { source: 'remote', selected: null, env: null, closed: new Set() };
+
+async function openPicker(env = null) {
+  picker.env = env;
+  picker.source = env?.source || 'remote';
+  picker.selected = env ? { name: env.branch, source: env.source } : null;
+  const f = $('#pickerForm');
+  f.q.value = '';
+  f.name.value = '';
+  $('#pickerErr').textContent = '';
+  $('#pickerTitle').textContent = env ? `Cambiar la rama de «${env.name}»` : 'Nuevo entorno: elige una rama';
+  $('#pickerOk').textContent = env ? 'Cambiar rama' : 'Crear y desplegar';
+  document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = !!env);
+  $('#picker').showModal();
+  branches = await api('GET', '/api/branches');
+  renderBranches();
+  f.q.focus();
+}
+
+function renderBranches() {
+  document.querySelectorAll('#sourceSeg button').forEach(b => b.classList.toggle('on', b.dataset.source === picker.source));
+  const q = $('#pickerForm').q.value.trim().toLowerCase();
+  const used = new Map((state?.environments || []).map(e => [`${e.source}:${e.branch}`, e.name]));
+  const list = branches.filter(b => b.source === picker.source &&
+    (!q || b.name.toLowerCase().includes(q) || b.subject.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)));
+
+  // Group by the first path segment (feature/, bugfix/, …); branches without "/" go to "principales".
+  const groups = new Map();
+  for (const b of list) {
+    const g = b.name.includes('/') ? b.name.split('/')[0] : 'principales';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(b);
+  }
+  const order = [...groups.keys()].sort((a, b) => (a === 'principales' ? -1 : b === 'principales' ? 1 : a.localeCompare(b)));
+  $('#branchList').innerHTML = order.map(g => `<div class="group ${picker.closed.has(g) && !q ? 'closed' : ''}" data-group="${esc(g)}">
+      <div class="group-name">${picker.closed.has(g) && !q ? '▸' : '▾'} ${esc(g)} <span class="muted">(${groups.get(g).length})</span></div>
+      ${groups.get(g).map(b => {
+        const sel = picker.selected?.name === b.name && picker.selected?.source === b.source;
+        const usedBy = used.get(`${b.source}:${b.name}`);
+        return `<div class="branch ${sel ? 'sel' : ''}" data-branch="${esc(b.name)}">
+          <span class="bn">${esc(b.name)} ${usedBy ? `<span class="tag">entorno: ${esc(usedBy)}</span>` : ''}</span>
+          <span class="when">${ago(b.date)}</span>
+          <span class="sub"><code>${short(b.commit)}</code> ${esc(b.subject)} · ${esc(b.author)}</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('') || `<div class="empty">${picker.source === 'local' ? 'No hay ramas del repo local (¿está configurado localRepoPath?).' : 'Ninguna rama coincide.'}</div>`;
+  $('#pickedLabel').innerHTML = picker.selected ? `Seleccionada: <code>${esc(picker.selected.name)}</code> (${SOURCE[picker.selected.source]})` : 'Ninguna rama seleccionada';
+  $('#pickerOk').disabled = !picker.selected;
+}
+
+const slug = s => s.toLowerCase().replace(/^(feature|feat|bugfix|fix|chore|hotfix)\//, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+
+$('#pickerForm').q.addEventListener('input', renderBranches);
+$('#sourceSeg').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-source]');
+  if (b) { picker.source = b.dataset.source; renderBranches(); }
+});
+$('#branchList').addEventListener('click', ev => {
+  const gn = ev.target.closest('.group-name');
+  if (gn) {
+    const g = gn.parentElement.dataset.group;
+    picker.closed.has(g) ? picker.closed.delete(g) : picker.closed.add(g);
+    renderBranches();
+    return;
+  }
+  const row = ev.target.closest('[data-branch]');
+  if (!row) return;
+  picker.selected = { name: row.dataset.branch, source: picker.source };
+  const f = $('#pickerForm');
+  if (!picker.env) f.name.value = slug(row.dataset.branch) + (picker.source === 'local' ? '-local' : '');
+  renderBranches();
+});
+$('#branchList').addEventListener('dblclick', ev => { if (ev.target.closest('[data-branch]')) $('#pickerOk').click(); });
+
+$('#pickerForm').addEventListener('submit', async ev => {
+  if (ev.submitter?.value !== 'ok') return;
+  ev.preventDefault();
+  const f = ev.target, sel = picker.selected;
+  try {
+    if (picker.env) {
+      await api('PUT', `/api/envs/${picker.env.name}`, { branch: sel.name, source: sel.source });
+      toast(`<b>${esc(picker.env.name)}</b> ahora sigue <code>${esc(sel.name)}</code>`);
+    } else {
+      const name = f.name.value.trim() || slug(sel.name);
+      await api('POST', '/api/envs', { name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked });
+      toast(`Entorno <b>${esc(name)}</b> creado: desplegando <code>${esc(sel.name)}</code>…`);
+    }
+    $('#picker').close();
+    refresh();
+  } catch (err) { $('#pickerErr').textContent = err.message; }
+});
+
+$('#newEnv').onclick = () => openPicker();
+$('#fetch').onclick = async () => {
+  $('#fetch').disabled = true;
+  try { await api('POST', '/api/fetch'); await refresh(); toast('Remoto y repo local revisados'); }
+  catch (err) { toast(esc(err.message), 'bad'); }
+  finally { $('#fetch').disabled = false; }
+};
+
+refresh();
+connect();
+</script>
+</body>
+</html>
