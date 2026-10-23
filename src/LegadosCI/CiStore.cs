@@ -9,12 +9,13 @@ public sealed class CiConfig
     public string ProjectFile { get; set; } = "";
     public string PackagesSource { get; set; } = "";
     public string Msbuild { get; set; } = "";
-    public string IisExpress { get; set; } = "";
     public List<string> ExcludeFromPublish { get; set; } = [];
     public List<string> IncludeInPublish { get; set; } = [];
     public List<string> Preserve { get; set; } = [];
     public int HealthTimeoutSec { get; set; } = 240;
     public int KeepBackups { get; set; } = 20;
+    /// <summary>How many versioned releases to keep per environment (the engine prunes older ones).</summary>
+    public int KeepReleases { get; set; } = 5;
     /// <summary>Developer's working repository: its branches can be deployed before pushing.</summary>
     public string LocalRepoPath { get; set; } = "";
     /// <summary>How often the remote is checked (git ls-remote).</summary>
@@ -37,6 +38,14 @@ public sealed class EnvConfig
     public string Configuration { get; set; } = "Desenvolvimento";
     public string HealthPath { get; set; } = "/";
     public bool AutoDeploy { get; set; } = true;
+    /// <summary>Optional root for this env's files. Empty = default &lt;Root&gt;\envs\&lt;name&gt;.</summary>
+    public string SitePath { get; set; } = "";
+    /// <summary>IIS website name. Empty resolves to 'LegadosCI-&lt;name&gt;'; fixed after creation.</summary>
+    public string SiteName { get; set; } = "";
+    /// <summary>IIS application pool name. Empty resolves to 'LegadosCI-&lt;name&gt;'; fixed after creation.</summary>
+    public string AppPoolName { get; set; } = "";
+    /// <summary>Optional http host header for the IIS binding. Empty = bind on the port only.</summary>
+    public string HostHeader { get; set; } = "";
 }
 
 /// <summary>Version info the engine writes into each deployed site (deploy-info.json).</summary>
@@ -90,11 +99,40 @@ public sealed class CiStore(string root)
             ?? throw new InvalidOperationException($"{FilePath} esta vacio.");
     }
 
+    /// <summary>Legacy (pre-IIS) site folder, kept only as the fallback when there is no release.</summary>
     public string SiteDir(string env) => Path.Combine(Root, "envs", env, "site");
+
+    /// <summary>Base folder of an environment: EnvConfig.SitePath when set, else &lt;Root&gt;\envs\&lt;name&gt;.</summary>
+    public string EnvBase(EnvConfig env) =>
+        string.IsNullOrWhiteSpace(env.SitePath) ? Path.Combine(Root, "envs", env.Name) : env.SitePath;
+
+    /// <summary>Default IIS site/pool name for an env when the stored value is empty.</summary>
+    public static string DefaultSiteName(string env) => $"LegadosCI-{env}";
+
+    /// <summary>
+    /// Folder that IIS currently serves for <paramref name="env"/>, following the current.txt contract
+    /// shared with the engine: current.txt is ASCII, no BOM, a single line, no trailing newline, and is
+    /// trimmed on read. When it names an existing releases\&lt;id&gt; folder that is the active release;
+    /// otherwise (absent/empty/missing dir) we fall back to the legacy &lt;base&gt;\site folder.
+    /// </summary>
+    public string ActiveReleaseDir(string env)
+    {
+        var cfg = Load().Environments.FirstOrDefault(e => e.Name == env);
+        var baseDir = cfg is null ? Path.Combine(Root, "envs", env) : EnvBase(cfg);
+        var legacy = cfg is null ? SiteDir(env) : Path.Combine(baseDir, "site");
+        var current = Path.Combine(baseDir, "current.txt");
+        if (!File.Exists(current)) return legacy;
+        string id;
+        try { id = File.ReadAllText(current).Trim(); }
+        catch (Exception) { return legacy; }
+        if (string.IsNullOrEmpty(id)) return legacy;
+        var release = Path.Combine(baseDir, "releases", id);
+        return Directory.Exists(release) ? release : legacy;
+    }
 
     public DeployInfo? GetDeployInfo(string env)
     {
-        var file = Path.Combine(SiteDir(env), "deploy-info.json");
+        var file = Path.Combine(ActiveReleaseDir(env), "deploy-info.json");
         if (!File.Exists(file)) return null;
         try { return JsonSerializer.Deserialize<DeployInfo>(File.ReadAllText(file), Json); }
         catch (Exception) { return null; }

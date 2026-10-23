@@ -122,6 +122,7 @@
   /* The native <select> popup is painted by the OS and does not inherit translucent tokens,
      so give both the control and its options solid, theme-aware colors (otherwise light-on-light). */
   select {
+    color-scheme: light dark;
     background-color: Field; color: FieldText;
     appearance: none;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
@@ -175,6 +176,8 @@
   .picker-foot label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
   .picker-foot select { border-radius: var(--r-sm); }
   .picker-foot input[name=name] { width: 170px; border-radius: var(--r-sm); }
+  .picker-foot .sitepath-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; align-items: flex-start; }
+  .picker-foot .sitepath-field input { width: 300px; max-width: 100%; border-radius: var(--r-sm); }
 
   #toasts { position: fixed; right: 18px; bottom: 18px; display: grid; gap: 10px; z-index: 10; }
   .toast { background: var(--mica); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--r-md); padding: 12px 15px; box-shadow: var(--shadow-flyout); max-width: 380px; font-size: 13px; backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); animation: toastin .25s cubic-bezier(.1,.9,.2,1); }
@@ -230,6 +233,9 @@
       <span class="muted" id="pickedLabel">Nenhuma branch selecionada</span>
       <span class="grow"></span>
       <span data-new-only><input name="name" placeholder="nome do ambiente"></span>
+      <label class="muted sitepath-field" title="vazio = gerido automaticamente em envs\&lt;nome&gt;; o site real fica em &lt;base&gt;\releases\&lt;versao&gt;">Pasta base do ambiente (IIS)
+        <input name="sitePath" placeholder="Pasta base do ambiente (opcional) - ex.: C:\inetpub\wwwroot\deploys\develop">
+      </label>
       <label class="muted">Configuração
         <select name="configuration" aria-label="Configuração de compilação"><option>Desenvolvimento</option></select>
       </label>
@@ -434,6 +440,9 @@ $('#envs').addEventListener('click', async ev => {
     } else if (act === 'duplicate') {
       openPicker(env, 'copy');
       return;
+    } else if (act === 'duplicate') {
+      openPicker(env, 'copy');
+      return;
     } else {
       await api('POST', `/api/envs/${name}/${act}`);
     }
@@ -469,6 +478,7 @@ async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   const f = $('#pickerForm');
   f.q.value = '';
   f.name.value = mode === 'copy' ? `${env.name}-copia`.slice(0, 40) : '';   // "copia" vale como slug ([a-z0-9-])
+  f.sitePath.value = mode === 'copy' ? (env?.sitePath || '') : '';
   f.autoDeploy.checked = env ? env.autoDeploy : true;
   f.configuration.innerHTML = `<option>${esc(env?.configuration || 'Desenvolvimento')}</option>`;
   $('#pickerErr').textContent = '';
@@ -477,6 +487,7 @@ async function openPicker(env = null, mode = env ? 'edit' : 'new') {
     : 'Novo ambiente: escolha uma branch';
   $('#pickerOk').textContent = mode === 'edit' ? 'Guardar' : 'Criar e implantar';
   $('#pickerOk').disabled = !picker.selected;
+  // Los campos de solo-creación (nome/configuração/auto-deploy/sitePath) se muestran en crear Y duplicar, no en editar.
   document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = mode === 'edit');
   $('#picker').showModal();
   branches = await api('GET', '/api/branches');
@@ -545,22 +556,22 @@ $('#pickerForm').addEventListener('submit', async ev => {
   if (ev.submitter?.value !== 'ok') return;
   ev.preventDefault();
   const f = ev.target, sel = picker.selected;
+  const sitePath = f.sitePath.value.trim() || undefined;
   try {
     if (picker.mode === 'edit') {
       const env = picker.env, configuration = f.configuration.value;
-      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration });
+      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration, sitePath });
       const changed = sel.name !== env.branch || sel.source !== env.source || configuration !== env.configuration;
-      // A new branch or configuration only takes effect after a build, so redeploy right away.
+      // Uma nova branch ou configuração só surte efeito após compilar, por isso reimplanta já.
       if (changed && !env.job) await api('POST', `/api/envs/${env.name}/deploy`);
       toast(`<b>${esc(env.name)}</b>: <code>${esc(sel.name)}</code> · ${esc(configuration)}${changed ? ' · a reimplantar…' : ''}`);
     } else {
       const name = f.name.value.trim() || slug(sel.name);
       await api('POST', '/api/envs', {
         name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked,
-        copyFrom: picker.mode === 'copy' ? picker.env.name : null,
+        sitePath, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
       });
       toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)}): a implantar <code>${esc(sel.name)}</code>…`);
-    }
     $('#picker').close();
     refresh();
   } catch (err) { $('#pickerErr').textContent = err.message; }

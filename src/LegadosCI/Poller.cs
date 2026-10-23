@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net.NetworkInformation;
 
 namespace LegadosCI;
 
@@ -11,7 +10,7 @@ namespace LegadosCI;
 /// (a burst of commits builds once, with the latest one). A commit that already failed is not
 /// retried until a newer commit arrives or someone deploys by hand.
 /// </summary>
-public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifier notifier, ILogger<Poller> log) : BackgroundService
+public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifier notifier, IisStateProbe probe, ILogger<Poller> log) : BackgroundService
 {
     static readonly TimeSpan Tick = TimeSpan.FromSeconds(2);
 
@@ -115,16 +114,18 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
         return watcher;
     }
 
-    // IIS Express does not survive a reboot: bring back every environment that has a deployed version.
+    // On startup, bring back every deployed environment whose IIS site/pool is stopped.
     void StartDeployedSites()
     {
+        if (!probe.IisAvailable)
+        {
+            log.LogWarning("IIS no disponible: no se arrancan los sitios desplegados al iniciar.");
+            return;
+        }
         foreach (var env in store.Load().Environments)
         {
-            if (store.GetDeployInfo(env.Name) is not null && !IsListening(env.Port) && !queue.HasPending(env.Name))
+            if (store.GetDeployInfo(env.Name) is not null && !probe.Running(env.Name) && !queue.HasPending(env.Name))
                 queue.Enqueue(env.Name, JobKind.Start, "startup");
         }
     }
-
-    public static bool IsListening(int port) =>
-        IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(e => e.Port == port);
 }

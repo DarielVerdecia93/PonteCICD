@@ -26,22 +26,24 @@ try {
     $current = Get-DeployInfo
     Write-Step ('Version actual: ' + $(if ($current) { $current.ShortCommit } else { '(ninguna)' }) + " -> restaurar $($target.Name)")
 
-    Write-Step 'Deteniendo el sitio'
-    Stop-Site
+    Write-Step 'Asegurando el sitio en IIS'
+    Ensure-Site
 
     Write-Step 'Guardando la version actual'
     $safety = New-SiteBackup 'rollback'
 
     Write-Step "Restaurando $($target.Name)"
+    # Restore-SiteBackup extrae el zip a una release nueva, re-crea los junctions de Preserve y hace Switch-Release.
     Restore-SiteBackup $target.Path
 
-    Write-Step 'Arrancando el sitio'
-    Start-Site
-    if (-not (Test-SiteHealth)) {
+    Write-Step 'Calentando la release restaurada'
+    $warm = Invoke-WarmRelease
+    if (-not ($warm -and (Test-SiteHealth))) {
         $hint = if ($safety) { " La version anterior al rollback esta en $(Split-Path $safety -Leaf)." } else { '' }
         throw "El sitio restaurado no responde correctamente.$hint"
     }
 
+    Remove-OldReleases
     Remove-OldBackups
     Write-Step "Rollback completado: ahora en $($target.Commit) - $SiteUrl"
 }
