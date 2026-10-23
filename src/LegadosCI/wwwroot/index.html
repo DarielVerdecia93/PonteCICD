@@ -572,6 +572,7 @@ $('#pickerForm').addEventListener('submit', async ev => {
         sitePath, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
       });
       toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)}): a implantar <code>${esc(sel.name)}</code>…`);
+    }
     $('#picker').close();
     refresh();
   } catch (err) { $('#pickerErr').textContent = err.message; }
