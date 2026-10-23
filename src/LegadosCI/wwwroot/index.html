@@ -52,6 +52,8 @@
   .actions .row { display: flex; gap: 6px; }
   .actions .row > * { flex: 1; min-width: 0; }
   button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+  select { color-scheme: light dark; }
+  select option { background: var(--panel); color: var(--text); }
   button { cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--accent); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -89,6 +91,8 @@
   .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .picker-foot .grow { flex: 1; }
   .picker-foot input[name=name] { width: 170px; }
+  .picker-foot .sitepath-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .picker-foot .sitepath-field input { width: 300px; max-width: 100%; }
 
   #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
   .toast { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; box-shadow: 0 6px 20px rgb(0 0 0 / .18); max-width: 380px; font-size: 13px; }
@@ -140,6 +144,9 @@
     <div class="picker-foot" id="pickerFoot">
       <span class="muted" id="pickedLabel">Ninguna rama seleccionada</span>
       <span class="grow"></span>
+      <label class="muted sitepath-field" title="vazio = gerido automaticamente em envs\&lt;nome&gt;; o site real fica em &lt;base&gt;\releases\&lt;versao&gt;">Pasta base do ambiente (IIS)
+        <input name="sitePath" placeholder="Pasta base do ambiente (opcional) - ex.: D:\sites\develop">
+      </label>
       <span data-new-only><input name="name" placeholder="nombre del entorno"></span>
       <select name="configuration" data-new-only>
         <option>Desenvolvimento</option><option>Qualidade</option><option>Producao</option><option>Release</option><option>Debug</option>
@@ -246,6 +253,7 @@ function renderEnv(e) {
         <button data-act="toggleAuto">${e.autoDeploy ? 'Pasar a manual' : 'Activar auto'}</button>
         <button data-act="changeBranch">Cambiar rama</button>
       </div>
+      <button data-act="duplicate">Duplicar ambiente</button>
       <button class="danger" data-act="delete" ${busy ? 'disabled' : ''}>Eliminar entorno</button>
     </div>
   </div>`;
@@ -340,6 +348,9 @@ $('#envs').addEventListener('click', async ev => {
     } else if (act === 'changeBranch') {
       openPicker(env);
       return;
+    } else if (act === 'duplicate') {
+      openPicker(env, 'copy');
+      return;
     } else {
       await api('POST', `/api/envs/${name}/${act}`);
     }
@@ -349,19 +360,40 @@ $('#envs').addEventListener('click', async ev => {
 
 // ---------------------------------------------------------------- branch picker
 
-const picker = { source: 'remote', selected: null, env: null, closed: new Set() };
+const picker = { source: 'remote', selected: null, env: null, mode: 'new', closed: new Set() };
 
-async function openPicker(env = null) {
+// mode: 'new' (create) | 'edit' (change branch of env) | 'copy' (duplicate env)
+async function openPicker(env = null, mode = null) {
+  mode = mode || (env ? 'edit' : 'new');
   picker.env = env;
+  picker.mode = mode;
   picker.source = env?.source || 'remote';
   picker.selected = env ? { name: env.branch, source: env.source } : null;
   const f = $('#pickerForm');
   f.q.value = '';
   f.name.value = '';
+  f.sitePath.value = mode === 'copy' ? (env?.sitePath || '') : '';
   $('#pickerErr').textContent = '';
-  $('#pickerTitle').textContent = env ? `Cambiar la rama de «${env.name}»` : 'Nuevo entorno: elige una rama';
-  $('#pickerOk').textContent = env ? 'Cambiar rama' : 'Crear y desplegar';
-  document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = !!env);
+  if (mode === 'edit') {
+    $('#pickerTitle').textContent = `Cambiar la rama de «${env.name}»`;
+    $('#pickerOk').textContent = 'Cambiar rama';
+  } else if (mode === 'copy') {
+    $('#pickerTitle').textContent = `Duplicar «${env.name}»: elige una rama`;
+    $('#pickerOk').textContent = 'Duplicar y desplegar';
+  } else {
+    $('#pickerTitle').textContent = 'Nuevo entorno: elige una rama';
+    $('#pickerOk').textContent = 'Crear y desplegar';
+  }
+  // The create-only fields (name/configuration/auto-deploy) show in create AND copy modes, not in edit.
+  const showNewOnly = mode !== 'edit';
+  document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = !showNewOnly);
+  if (mode === 'copy') {
+    f.name.value = (env?.name || '') + '-copia';
+    if ([...f.configuration.options].some(o => o.value === env.configuration)) f.configuration.value = env.configuration;
+    f.autoDeploy.checked = !!env.autoDeploy;
+  } else if (mode === 'new') {
+    f.autoDeploy.checked = true;
+  }
   $('#picker').showModal();
   branches = await api('GET', '/api/branches');
   renderBranches();
@@ -427,13 +459,18 @@ $('#pickerForm').addEventListener('submit', async ev => {
   if (ev.submitter?.value !== 'ok') return;
   ev.preventDefault();
   const f = ev.target, sel = picker.selected;
+  const sitePath = f.sitePath.value.trim() || undefined;
   try {
-    if (picker.env) {
-      await api('PUT', `/api/envs/${picker.env.name}`, { branch: sel.name, source: sel.source });
+    if (picker.mode === 'edit') {
+      await api('PUT', `/api/envs/${picker.env.name}`, { branch: sel.name, source: sel.source, sitePath });
       toast(`<b>${esc(picker.env.name)}</b> ahora sigue <code>${esc(sel.name)}</code>`);
+    } else if (picker.mode === 'copy') {
+      const name = f.name.value.trim() || slug(sel.name);
+      await api('POST', '/api/envs', { name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked, sitePath, copyFrom: picker.env.name });
+      toast(`Entorno <b>${esc(name)}</b> duplicado de <b>${esc(picker.env.name)}</b>: desplegando <code>${esc(sel.name)}</code>…`);
     } else {
       const name = f.name.value.trim() || slug(sel.name);
-      await api('POST', '/api/envs', { name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked });
+      await api('POST', '/api/envs', { name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked, sitePath });
       toast(`Entorno <b>${esc(name)}</b> creado: desplegando <code>${esc(sel.name)}</code>…`);
     }
     $('#picker').close();
