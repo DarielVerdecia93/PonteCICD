@@ -6,7 +6,9 @@ $Root = Split-Path $PSScriptRoot -Parent
 $Cfg = Get-Content (Join-Path $Root 'ci.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $Mirror = Join-Path $Root 'mirror.git'
-$WorkDir = Join-Path $Root 'work'
+# work\ guarda el codigo fuente y la compilacion. El proyecto web genera rutas muy largas (obj\...\AspnetCompileMerge\...)
+# y MSBuild/aspnet_compiler fallan pasados 260 caracteres: workDir en ci.json permite usar una ruta corta.
+$WorkDir = if ($Cfg.PSObject.Properties['workDir'] -and $Cfg.workDir) { $Cfg.workDir } else { Join-Path $Root 'work' }
 $LockFile = Join-Path $WorkDir '.lock'
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
@@ -112,9 +114,17 @@ function Invoke-Robocopy([string]$Source, [string]$Destination, [string[]]$Exclu
 }
 
 function Clear-Directory([string]$Path, [string[]]$Keep = @()) {
-    if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null; return }
-    Get-ChildItem -LiteralPath $Path -Force | Where-Object { $Keep -notcontains $_.Name } |
-        Remove-Item -Recurse -Force
+    if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null; return }
+    foreach ($item in @(Get-ChildItem -LiteralPath $Path -Force | Where-Object { $Keep -notcontains $_.Name })) {
+        if ($item.PSIsContainer) {
+            # rd con prefijo \\?\ borra arboles con rutas de mas de 260 caracteres (Remove-Item de PowerShell 5.1 no puede).
+            & cmd.exe /d /c "rd /s /q `"\\?\$($item.FullName)`" 2>nul"
+            $global:LASTEXITCODE = 0
+        } else {
+            Remove-Item -LiteralPath $item.FullName -Force
+        }
+        if (Test-Path -LiteralPath $item.FullName) { throw "No se pudo borrar $($item.FullName). Algun proceso lo tiene abierto?" }
+    }
 }
 
 # ---------------------------------------------------------------- site (IIS Express)

@@ -1,119 +1,208 @@
 <!doctype html>
-<html lang="es">
+<html lang="pt">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Legados CI</title>
 <style>
+  /* ---- Windows 11 / Fluent design tokens ---- */
   :root {
-    --bg: #f6f7f9; --panel: #fff; --panel2: #f1f3f6; --text: #1d2330; --muted: #6b7385; --border: #e1e4ea;
-    --accent: #2f6fde; --ok: #1f9d55; --bad: #d64545; --warn: #c98a00; --mono: ui-monospace, Consolas, monospace;
+    color-scheme: light dark;
+    --bg: #f3f3f3;                      /* desktop */
+    --mica: rgba(255,255,255,.7);       /* layer over bg */
+    --panel: rgba(255,255,255,.8);      /* cards (acrylic-ish) */
+    --panel2: rgba(0,0,0,.035);         /* subtle fills */
+    --panel3: rgba(0,0,0,.06);
+    --text: #1a1a1a; --muted: #5c5c5c; --faint: #767676;
+    --border: rgba(0,0,0,.08); --border2: rgba(0,0,0,.14);
+    --accent: #0067c0; --accent-hover: #1975c5; --accent-press: #3183c8; --on-accent: #fff;
+    --ok: #0f7b0f; --bad: #c42b1c; --warn: #9d5d00; --local: #8a5cf6;
+    --mono: "Cascadia Code", ui-monospace, Consolas, monospace;
+    --r-lg: 12px; --r-md: 8px; --r-sm: 5px;
+    --shadow-card: 0 2px 4px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.05);
+    --shadow-flyout: 0 16px 40px rgba(0,0,0,.22), 0 0 1px rgba(0,0,0,.4);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14171d; --panel: #1c2028; --panel2: #232833; --text: #e4e7ee; --muted: #8b93a5; --border: #2c323d; --accent: #5b8ff0; }
+    :root {
+      --bg: #202020; --mica: rgba(44,44,44,.7); --panel: rgba(255,255,255,.055); --panel2: rgba(255,255,255,.045);
+      --panel3: rgba(255,255,255,.09); --text: #ffffff; --muted: #c8c8c8; --faint: #a0a0a0;
+      --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.14);
+      --accent: #60cdff; --accent-hover: #57c0ef; --accent-press: #4faad9; --on-accent: #1a1a1a;
+      --ok: #6ccb5f; --bad: #ff99a4; --warn: #fce100;
+      --shadow-card: 0 2px 6px rgba(0,0,0,.3); --shadow-flyout: 0 16px 48px rgba(0,0,0,.55), 0 0 1px rgba(0,0,0,.8);
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
-  header { display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-  header h1 { font-size: 16px; margin: 0; }
+  body {
+    margin: 0; color: var(--text);
+    font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
+      radial-gradient(900px 500px at 0% 0%, color-mix(in srgb, var(--local) 10%, transparent), transparent 55%),
+      var(--bg);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 12px 24px; position: sticky; top: 0; z-index: 5;
+    background: var(--mica); border-bottom: 1px solid var(--border);
+    backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.01em; }
+  header h1::before { content: ""; display: inline-block; width: 10px; height: 18px; margin-right: 9px; vertical-align: -3px; border-radius: 3px; background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 60%, var(--local))); }
   .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .live.on i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: .2s; }
+  .live.on i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
   header .meta { color: var(--muted); font-size: 12px; margin-right: auto; }
-  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 20px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 72px; display: grid; gap: 26px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
   h2 .grow { flex: 1; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-  .envs { display: grid; gap: 12px; }
-  .env { display: grid; grid-template-columns: 1fr 230px; gap: 12px 20px; }
-  .env.busy { border-color: var(--accent); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px;
+    box-shadow: var(--shadow-card); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .envs { display: grid; gap: 14px; }
+  .env {
+    display: grid; grid-template-columns: 1fr 240px; gap: 14px 24px;
+    transition: border-color .2s, box-shadow .2s, transform .2s;
+  }
+  .env:hover { box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .env.busy { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), var(--shadow-card); }
   .env-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .env-title b { font-size: 15px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
-  .dot.on { background: var(--ok); }
-  .tag { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
-  .tag.local { color: #8a5cf6; border-color: #8a5cf6; }
-  .tag.warn { color: var(--warn); border-color: var(--warn); }
-  .tag.busy { color: var(--accent); border-color: var(--accent); }
-  .rows { display: grid; grid-template-columns: 105px 1fr; gap: 4px 10px; font-size: 13px; margin-top: 10px; }
-  .rows > span:nth-child(odd) { color: var(--muted); }
+  .env-title b { font-size: 16px; font-weight: 600; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); display: inline-block; flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+
+  .tag { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 999px; background: var(--panel3); color: var(--muted); white-space: nowrap; border: 1px solid transparent; }
+  .tag.local { color: var(--local); background: color-mix(in srgb, var(--local) 14%, transparent); }
+  .tag.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+  .tag.busy { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+  .rows { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13px; margin-top: 12px; }
+  .rows > span:nth-child(odd) { color: var(--faint); }
   code, .mono { font-family: var(--mono); font-size: 12px; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: var(--r-sm); }
   .muted { color: var(--muted); }
-  .status { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--panel2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
-  .status.run { color: var(--accent); }
-  .status.wait { color: var(--warn); }
-  .spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+
+  .status { margin-top: 12px; padding: 9px 12px; border-radius: var(--r-md); background: var(--panel2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .status.run { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .status.wait { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .spinner { width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  details.pending { margin-top: 8px; font-size: 13px; }
+
+  details.pending { margin-top: 10px; font-size: 13px; }
   details.pending summary { cursor: pointer; color: var(--warn); }
   details.pending ul { margin: 6px 0 0; padding-left: 18px; }
   details.pending li { margin: 2px 0; }
-  .actions { display: flex; flex-direction: column; gap: 6px; }
-  .actions .row { display: flex; gap: 6px; }
+
+  .actions { display: flex; flex-direction: column; gap: 7px; }
+  .actions .row { display: flex; gap: 7px; }
   .actions .row > * { flex: 1; min-width: 0; }
-  button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
-  button { cursor: pointer; }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
-  button:disabled { opacity: .5; cursor: default; }
+
+  /* Fluent controls */
+  button, select, input {
+    font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border2); border-radius: var(--r-sm);
+    padding: 6px 12px; transition: background .12s, border-color .12s, box-shadow .12s, opacity .12s;
+  }
+  button { cursor: pointer; font-weight: 500; }
+  button:hover:not(:disabled) { background: var(--panel3); }
+  button:active:not(:disabled) { background: var(--panel2); transform: translateY(.5px); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  button.primary:active:not(:disabled) { background: var(--accent-press); }
+  button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+  button:disabled { opacity: .4; cursor: default; }
+  select:hover:not(:disabled), input:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border2)); }
+  input::placeholder { color: var(--faint); }
+  /* The native <select> popup is painted by the OS and does not inherit translucent tokens,
+     so give both the control and its options solid, theme-aware colors (otherwise light-on-light). */
+  select {
+    background-color: Field; color: FieldText;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 15px) center, calc(100% - 10px) center;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+    padding-right: 28px;
+  }
+  select option { background-color: Field; color: FieldText; }
+  select:disabled { opacity: .4; }
+
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; }
-  tr.job { cursor: pointer; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.job { cursor: pointer; transition: background .12s; }
   tr.job:hover td { background: var(--panel2); }
+  tr.job td:first-child { border-top-left-radius: var(--r-sm); border-bottom-left-radius: var(--r-sm); }
+  tr.job td:last-child { border-top-right-radius: var(--r-sm); border-bottom-right-radius: var(--r-sm); }
   .st-Succeeded { color: var(--ok); } .st-Failed { color: var(--bad); } .st-Running { color: var(--accent); } .st-Queued { color: var(--muted); }
-  pre.log { margin: 0; max-height: 480px; overflow: auto; background: #0f1218; color: #d5dae3; padding: 12px; border-radius: 6px; font: 12px/1.4 var(--mono); white-space: pre-wrap; }
+
+  pre.log { margin: 0; max-height: 480px; overflow: auto; background: #0c0c0c; color: #e6e6e6; padding: 14px; border-radius: var(--r-md); font: 12px/1.5 var(--mono); white-space: pre-wrap; border: 1px solid var(--border); }
   .err { color: var(--bad); }
-  a { color: var(--accent); }
-  .empty { color: var(--muted); text-align: center; padding: 28px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { color: var(--muted); text-align: center; padding: 36px; }
 
-  /* branch picker */
-  dialog { border: 1px solid var(--border); border-radius: 12px; padding: 0; width: min(760px, calc(100vw - 32px)); background: var(--panel); color: var(--text); }
-  dialog::backdrop { background: rgb(0 0 0 / .45); }
-  .picker-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; gap: 10px; }
+  /* branch picker (Fluent content dialog) */
+  dialog { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 0; width: min(760px, calc(100vw - 32px)); background: var(--mica); color: var(--text); box-shadow: var(--shadow-flyout); backdrop-filter: saturate(180%) blur(40px); -webkit-backdrop-filter: saturate(180%) blur(40px); }
+  dialog::backdrop { background: rgb(0 0 0 / .4); backdrop-filter: blur(2px); }
+  dialog[open] { animation: pop .18s cubic-bezier(.1,.9,.2,1); }
+  @keyframes pop { from { opacity: 0; transform: scale(.96) translateY(8px); } to { opacity: 1; transform: none; } }
+  .picker-head { padding: 16px 18px; border-bottom: 1px solid var(--border); display: grid; gap: 12px; }
+  .picker-head b { font-size: 16px; font-weight: 600; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; }
   .picker-head .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .picker-head input[type=search] { flex: 1; min-width: 200px; padding: 8px 10px; }
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; }
-  .seg button.on { background: var(--accent); color: #fff; }
-  .branch-list { max-height: 52vh; overflow: auto; padding: 6px 8px; }
-  .group > .group-name { font-size: 12px; color: var(--muted); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; user-select: none; }
+  .picker-head input[type=search] { flex: 1; min-width: 200px; padding: 8px 12px; border-radius: var(--r-md); }
+  .seg { display: inline-flex; border: 1px solid var(--border2); border-radius: var(--r-md); overflow: hidden; background: var(--panel2); }
+  .seg button { border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--accent); color: var(--on-accent); }
+  .branch-list { max-height: 52vh; overflow: auto; padding: 8px; }
+  .group > .group-name { font-size: 11px; color: var(--faint); font-weight: 600; padding: 10px 8px 4px; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; user-select: none; }
   .group.closed .branch { display: none; }
-  .branch { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .branch { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 9px 11px; border-radius: var(--r-md); cursor: pointer; border: 1px solid transparent; position: relative; transition: background .1s; }
   .branch:hover { background: var(--panel2); }
-  .branch.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .branch.sel { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .branch.sel::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 18px; border-radius: 3px; background: var(--accent); }
   .branch .bn { font-family: var(--mono); font-size: 13px; }
-  .branch .when { font-size: 12px; color: var(--muted); text-align: right; }
-  .branch .sub { grid-column: 1 / -1; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .picker-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .branch .when { font-size: 12px; color: var(--faint); text-align: right; }
+  .branch .sub { grid-column: 1 / -1; font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-foot { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .picker-foot .grow { flex: 1; }
-  .picker-foot input[name=name] { width: 170px; }
+  .picker-foot label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+  .picker-foot select { border-radius: var(--r-sm); }
+  .picker-foot input[name=name] { width: 170px; border-radius: var(--r-sm); }
 
-  #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
-  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; box-shadow: 0 6px 20px rgb(0 0 0 / .18); max-width: 380px; font-size: 13px; }
+  #toasts { position: fixed; right: 18px; bottom: 18px; display: grid; gap: 10px; z-index: 10; }
+  .toast { background: var(--mica); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--r-md); padding: 12px 15px; box-shadow: var(--shadow-flyout); max-width: 380px; font-size: 13px; backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); animation: toastin .25s cubic-bezier(.1,.9,.2,1); }
+  @keyframes toastin { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
   .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
   @media (max-width: 760px) { .env { grid-template-columns: 1fr; } header { flex-wrap: wrap; } main { padding: 16px; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Legados CI</h1>
-  <span class="live" id="live"><i></i><span>conectando…</span></span>
+  <span class="live" id="live"><i></i><span>a ligar…</span></span>
   <span class="meta" id="meta"></span>
-  <button id="fetch" title="Comprobar ahora el remoto y el repo local">Buscar cambios</button>
-  <button class="primary" id="newEnv">+ Nuevo entorno</button>
+  <button id="fetch" title="Verificar agora o remoto e o repositório local">Procurar alterações</button>
+  <button class="primary" id="newEnv">+ Novo ambiente</button>
 </header>
 <main>
   <section>
-    <h2>Entornos</h2>
+    <h2>Ambientes</h2>
     <div class="envs" id="envs"></div>
   </section>
 
   <section class="card">
-    <h2>Ejecuciones</h2>
+    <h2>Execuções</h2>
     <table>
-      <thead><tr><th>Inicio</th><th>Entorno</th><th>Acción</th><th>Origen</th><th>Commit</th><th>Estado</th><th>Resultado</th></tr></thead>
+      <thead><tr><th>Início</th><th>Ambiente</th><th>Ação</th><th>Origem</th><th>Commit</th><th>Estado</th><th>Resultado</th></tr></thead>
       <tbody id="jobs"></tbody>
     </table>
   </section>
@@ -127,26 +216,26 @@
 <dialog id="picker">
   <form method="dialog" id="pickerForm">
     <div class="picker-head">
-      <b id="pickerTitle">Elegir rama</b>
+      <b id="pickerTitle">Escolher branch</b>
       <div class="row">
-        <input type="search" name="q" placeholder="Buscar rama, autor o mensaje…" autocomplete="off">
+        <input type="search" name="q" placeholder="Procurar branch, autor ou mensagem…" autocomplete="off">
         <div class="seg" id="sourceSeg">
           <button type="button" data-source="remote" class="on">Remoto</button>
-          <button type="button" data-source="local">Mi repo local</button>
+          <button type="button" data-source="local">Meu repo local</button>
         </div>
       </div>
     </div>
     <div class="branch-list" id="branchList"></div>
     <div class="picker-foot" id="pickerFoot">
-      <span class="muted" id="pickedLabel">Ninguna rama seleccionada</span>
+      <span class="muted" id="pickedLabel">Nenhuma branch selecionada</span>
       <span class="grow"></span>
-      <span data-new-only><input name="name" placeholder="nombre del entorno"></span>
-      <select name="configuration" data-new-only>
-        <option>Desenvolvimento</option><option>Qualidade</option><option>Producao</option><option>Release</option><option>Debug</option>
-      </select>
+      <span data-new-only><input name="name" placeholder="nome do ambiente"></span>
+      <label class="muted">Configuração
+        <select name="configuration" aria-label="Configuração de compilação"><option>Desenvolvimento</option></select>
+      </label>
       <label data-new-only class="muted"><input type="checkbox" name="autoDeploy" checked> auto-deploy</label>
       <button value="cancel" formnovalidate>Cancelar</button>
-      <button class="primary" id="pickerOk" value="ok" disabled>Crear y desplegar</button>
+      <button class="primary" id="pickerOk" value="ok" disabled>Criar e implantar</button>
     </div>
     <div class="err" id="pickerErr" style="padding:0 16px 12px"></div>
   </form>
@@ -158,19 +247,20 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const short = c => c ? c.slice(0, 7) : '—';
-const ACTIONS = { Deploy: 'Deploy', Rollback: 'Rollback', Start: 'Arrancar', Stop: 'Parar', Restart: 'Reiniciar', Purge: 'Eliminar' };
+const ACTIONS = { Deploy: 'Deploy', Rollback: 'Rollback', Start: 'Iniciar', Stop: 'Parar', Restart: 'Reiniciar', Purge: 'Eliminar' };
 const SOURCE = { remote: 'remoto', local: 'local' };
+const STATUS = { Queued: 'Na fila', Running: 'A executar', Succeeded: 'Concluído', Failed: 'Falhou' };
 
 function ago(d) {
   if (!d) return '—';
   const s = Math.round((Date.now() - new Date(d)) / 1000);
-  if (s < 0) return `en ${-s}s`;
-  if (s < 60) return `hace ${s}s`;
-  if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
-  return `hace ${Math.floor(s / 86400)} d`;
+  if (s < 0) return `em ${-s}s`;
+  if (s < 60) return `há ${s}s`;
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return `há ${Math.floor(s / 86400)} d`;
 }
-const fmt = d => d ? new Date(d).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const fmt = d => d ? new Date(d).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
 let state = null, branches = [], jobs = [], openLog = null, knownJobs = new Map();
 
@@ -211,42 +301,43 @@ function renderEnv(e) {
   const backups = e.backups.map(b => `<option value="${esc(b.name)}">${fmt(b.date)} · ${esc(b.commit.slice(0, 7))} · ${esc(b.reason)}</option>`).join('');
   const busy = !!e.job;
   const pending = e.pending?.length
-    ? `<details class="pending"><summary>${e.pending.length}${e.pending.length >= 30 ? '+' : ''} commit(s) sin desplegar</summary><ul>${
+    ? `<details class="pending"><summary>${e.pending.length}${e.pending.length >= 30 ? '+' : ''} commit(s) por implantar</summary><ul>${
         e.pending.map(c => `<li><code>${short(c.commit)}</code> ${esc(c.subject)} <span class="muted">· ${esc(c.author)} · ${ago(c.date)}</span></li>`).join('')
       }</ul></details>` : '';
   return `<div class="card env ${busy ? 'busy' : ''}" data-env="${esc(e.name)}">
     <div>
       <div class="env-title">
-        <span class="dot ${e.running ? 'on' : ''}" title="${e.running ? 'En ejecución' : 'Parado'}"></span>
+        <span class="dot ${e.running ? 'on' : ''}" title="${e.running ? 'Em execução' : 'Parado'}"></span>
         <b>${esc(e.name)}</b>
-        <span class="tag mono ${e.source === 'local' ? 'local' : ''}" title="Origen: ${SOURCE[e.source]}">${esc(e.branch)}${e.source === 'local' ? ' · local' : ''}</span>
+        <span class="tag mono ${e.source === 'local' ? 'local' : ''}" title="Origem: ${SOURCE[e.source]}">${esc(e.branch)}${e.source === 'local' ? ' · local' : ''}</span>
         <span class="tag">${esc(e.configuration)}</span>
         <span class="tag">${e.autoDeploy ? 'auto-deploy' : 'manual'}</span>
-        ${!h ? '<span class="tag warn">la rama ya no existe</span>' : upToDate ? '<span class="tag">al día</span>' : d ? '<span class="tag warn">desactualizado</span>' : ''}
+        ${!h ? '<span class="tag warn">a branch já não existe</span>' : upToDate ? '<span class="tag">atualizado</span>' : d ? '<span class="tag warn">desatualizado</span>' : ''}
       </div>
       <div class="rows">
         <span>URL</span><span><a href="${esc(e.url)}" target="_blank">${esc(e.url)}</a></span>
-        <span>Desplegado</span><span>${d ? `<code>${esc(d.shortCommit)}</code> ${esc(d.subject)} <span class="muted">· ${ago(d.deployedAt)}</span>` : '<span class="muted">nada todavía</span>'}</span>
+        <span>Implantado</span><span>${d ? `<code>${esc(d.shortCommit)}</code> ${esc(d.subject)} <span class="muted">· ${ago(d.deployedAt)}</span>` : '<span class="muted">nada ainda</span>'}</span>
         <span>Último commit</span><span>${h ? `<code>${short(h.commit)}</code> ${esc(h.subject)} <span class="muted">· ${esc(h.author)} · ${ago(h.date)}</span>` : '—'}</span>
       </div>
       ${pending}
       ${statusLine(e)}
     </div>
     <div class="actions">
-      <button class="primary" data-act="deploy" ${busy ? 'disabled' : ''}>${upToDate ? 'Redesplegar' : 'Desplegar ahora'}</button>
+      <button class="primary" data-act="deploy" ${busy ? 'disabled' : ''}>${upToDate ? 'Reimplantar' : 'Implantar agora'}</button>
       <div class="row">
-        <select data-backup ${e.backups.length ? '' : 'disabled'} title="Backups">${backups || '<option>sin backups</option>'}</select>
+        <select data-backup ${e.backups.length ? '' : 'disabled'} title="Backups">${backups || '<option>sem backups</option>'}</select>
       </div>
       <button data-act="rollback" ${busy || !e.backups.length ? 'disabled' : ''}>Restaurar backup</button>
       <div class="row">
-        <button data-act="${e.running ? 'stop' : 'start'}" ${busy ? 'disabled' : ''}>${e.running ? 'Parar' : 'Arrancar'}</button>
+        <button data-act="${e.running ? 'stop' : 'start'}" ${busy ? 'disabled' : ''}>${e.running ? 'Parar' : 'Iniciar'}</button>
         <button data-act="restart" ${busy ? 'disabled' : ''}>Reiniciar</button>
       </div>
       <div class="row">
-        <button data-act="toggleAuto">${e.autoDeploy ? 'Pasar a manual' : 'Activar auto'}</button>
-        <button data-act="changeBranch">Cambiar rama</button>
+        <button data-act="toggleAuto">${e.autoDeploy ? 'Passar a manual' : 'Ativar auto'}</button>
+        <button data-act="changeBranch" title="Alterar branch ou configuração">Editar</button>
       </div>
-      <button class="danger" data-act="delete" ${busy ? 'disabled' : ''}>Eliminar entorno</button>
+      <button data-act="duplicate" title="Criar um ambiente novo com a mesma branch, configuração e Web.local.config">Duplicar ambiente</button>
+      <button class="danger" data-act="delete" ${busy ? 'disabled' : ''}>Eliminar ambiente</button>
     </div>
   </div>`;
 }
@@ -254,8 +345,8 @@ function renderEnv(e) {
 function renderJobs() {
   $('#jobs').innerHTML = jobs.map(j => `<tr class="job" data-job="${j.id}">
       <td>${fmt(j.startedAt || j.queuedAt)}</td><td>${esc(j.env)}</td><td>${ACTIONS[j.kind] || j.kind}</td><td>${esc(j.trigger)}</td>
-      <td><code>${short(j.commit)}</code></td><td class="st-${j.status}">${j.status}${j.step ? ' · ' + esc(j.step) : ''}</td><td>${esc(j.summary)}</td></tr>`).join('')
-    || '<tr><td colspan="7" class="muted">Sin ejecuciones.</td></tr>';
+      <td><code>${short(j.commit)}</code></td><td class="st-${j.status}">${STATUS[j.status] || j.status}${j.step ? ' · ' + esc(j.step) : ''}</td><td>${esc(j.summary)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="muted">Sem execuções.</td></tr>';
 }
 
 function notifyFinished() {
@@ -263,7 +354,7 @@ function notifyFinished() {
     const before = knownJobs.get(j.id);
     if (before && before !== j.status && (j.status === 'Succeeded' || j.status === 'Failed')) {
       const ok = j.status === 'Succeeded';
-      toast(`<b>${esc(j.env)}</b> · ${ACTIONS[j.kind]} ${ok ? 'completado' : 'fallido'}<br><span class="muted">${esc(j.summary)}</span>`, ok ? 'ok' : 'bad');
+      toast(`<b>${esc(j.env)}</b> · ${ACTIONS[j.kind]} ${ok ? 'concluído' : 'falhou'}<br><span class="muted">${esc(j.summary)}</span>`, ok ? 'ok' : 'bad');
     }
     knownJobs.set(j.id, j.status);
   }
@@ -272,17 +363,17 @@ function notifyFinished() {
 async function refresh() {
   try {
     [state, jobs] = await Promise.all([api('GET', '/api/state'), api('GET', '/api/jobs')]);
-    $('#meta').innerHTML = `remoto revisado ${ago(state.lastCheck)} (cada ${state.pollIntervalSec}s)` +
-      (state.localRepoPath ? ` · vigilando repo local` : '') +
+    $('#meta').innerHTML = `remoto verificado ${ago(state.lastCheck)} (a cada ${state.pollIntervalSec}s)` +
+      (state.localRepoPath ? ` · a vigiar repo local` : '') +
       (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
     $('#envs').innerHTML = state.environments.length
       ? state.environments.map(renderEnv).join('')
-      : '<div class="card empty">No hay entornos todavía.<br><br><button class="primary" onclick="openPicker()">+ Crear el primero eligiendo una rama</button></div>';
+      : '<div class="card empty">Ainda não há ambientes.<br><br><button class="primary" onclick="openPicker()">+ Criar o primeiro escolhendo uma branch</button></div>';
     renderJobs();
     notifyFinished();
     if (openLog) await loadLog();
   } catch (err) {
-    $('#meta').innerHTML = `<span class="err">Sin conexión con el servicio: ${esc(err.message)}</span>`;
+    $('#meta').innerHTML = `<span class="err">Sem ligação com o serviço: ${esc(err.message)}</span>`;
   }
 }
 
@@ -292,9 +383,9 @@ const scheduleRefresh = () => { clearTimeout(refreshTimer); refreshTimer = setTi
 // Live updates (Server-Sent Events) + a slow fallback poll for things the server can't notice (e.g. IIS Express killed by hand).
 function connect() {
   const es = new EventSource('/api/events');
-  es.onopen = () => { $('#live').className = 'live on'; $('#live span').textContent = 'en vivo'; };
+  es.onopen = () => { $('#live').className = 'live on'; $('#live span').textContent = 'ao vivo'; };
   es.onmessage = scheduleRefresh;
-  es.onerror = () => { $('#live').className = 'live'; $('#live span').textContent = 'reconectando…'; };
+  es.onerror = () => { $('#live').className = 'live'; $('#live span').textContent = 'a reconectar…'; };
 }
 setInterval(refresh, 15000);
 setInterval(() => document.querySelectorAll('[data-countdown]').forEach(el => {
@@ -330,15 +421,18 @@ $('#envs').addEventListener('click', async ev => {
   try {
     if (act === 'rollback') {
       const backup = card.querySelector('[data-backup]').value;
-      if (!confirm(`¿Restaurar ${backup} en ${name}?\nLa versión actual se guardará antes en un zip.`)) return;
+      if (!confirm(`Restaurar ${backup} em ${name}?\nA versão atual será guardada antes num zip.`)) return;
       await api('POST', `/api/envs/${name}/rollback?arg=${encodeURIComponent(backup)}`);
     } else if (act === 'delete') {
-      if (!confirm(`¿Eliminar el entorno ${name}?\nSe para el sitio y se borran su carpeta y sus backups.`)) return;
+      if (!confirm(`Eliminar o ambiente ${name}?\nO site é parado e a sua pasta e backups são apagados.`)) return;
       await api('DELETE', `/api/envs/${name}`);
     } else if (act === 'toggleAuto') {
       await api('PUT', `/api/envs/${name}`, { autoDeploy: !env.autoDeploy });
     } else if (act === 'changeBranch') {
-      openPicker(env);
+      openPicker(env, 'edit');
+      return;
+    } else if (act === 'duplicate') {
+      openPicker(env, 'copy');
       return;
     } else {
       await api('POST', `/api/envs/${name}/${act}`);
@@ -349,22 +443,45 @@ $('#envs').addEventListener('click', async ev => {
 
 // ---------------------------------------------------------------- branch picker
 
-const picker = { source: 'remote', selected: null, env: null, closed: new Set() };
+// mode: 'new' (from scratch), 'edit' (change branch/configuration of env), 'copy' (new environment based on env)
+const picker = { source: 'remote', selected: null, env: null, mode: 'new', closed: new Set() };
+const FALLBACK_CONFIGS = ['Desenvolvimento', 'Qualidade', 'Producao', 'Release', 'Debug'];
 
-async function openPicker(env = null) {
+// Fills the configuration list from the web project of the selected branch, keeping the current choice.
+async function loadConfigs() {
+  const sel = $('#pickerForm').configuration;
+  const want = sel.value || picker.env?.configuration || 'Desenvolvimento';
+  let list = [];
+  try {
+    const b = picker.selected;
+    list = await api('GET', `/api/configurations${b ? `?branch=${encodeURIComponent(b.name)}&source=${b.source}` : ''}`);
+  } catch { /* keep fallback */ }
+  if (!list.length) list = FALLBACK_CONFIGS;
+  if (!list.includes(want)) list = [want, ...list];
+  sel.innerHTML = list.map(c => `<option${c === want ? ' selected' : ''}>${esc(c)}</option>`).join('');
+}
+
+async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   picker.env = env;
+  picker.mode = mode;
   picker.source = env?.source || 'remote';
   picker.selected = env ? { name: env.branch, source: env.source } : null;
   const f = $('#pickerForm');
   f.q.value = '';
-  f.name.value = '';
+  f.name.value = mode === 'copy' ? `${env.name}-copia`.slice(0, 40) : '';   // "copia" vale como slug ([a-z0-9-])
+  f.autoDeploy.checked = env ? env.autoDeploy : true;
+  f.configuration.innerHTML = `<option>${esc(env?.configuration || 'Desenvolvimento')}</option>`;
   $('#pickerErr').textContent = '';
-  $('#pickerTitle').textContent = env ? `Cambiar la rama de «${env.name}»` : 'Nuevo entorno: elige una rama';
-  $('#pickerOk').textContent = env ? 'Cambiar rama' : 'Crear y desplegar';
-  document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = !!env);
+  $('#pickerTitle').textContent = mode === 'edit' ? `Editar «${env.name}»: branch e configuração`
+    : mode === 'copy' ? `Duplicar «${env.name}» num ambiente novo`
+    : 'Novo ambiente: escolha uma branch';
+  $('#pickerOk').textContent = mode === 'edit' ? 'Guardar' : 'Criar e implantar';
+  $('#pickerOk').disabled = !picker.selected;
+  document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = mode === 'edit');
   $('#picker').showModal();
   branches = await api('GET', '/api/branches');
   renderBranches();
+  loadConfigs();
   f.q.focus();
 }
 
@@ -378,24 +495,24 @@ function renderBranches() {
   // Group by the first path segment (feature/, bugfix/, …); branches without "/" go to "principales".
   const groups = new Map();
   for (const b of list) {
-    const g = b.name.includes('/') ? b.name.split('/')[0] : 'principales';
+    const g = b.name.includes('/') ? b.name.split('/')[0] : 'principais';
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(b);
   }
-  const order = [...groups.keys()].sort((a, b) => (a === 'principales' ? -1 : b === 'principales' ? 1 : a.localeCompare(b)));
+  const order = [...groups.keys()].sort((a, b) => (a === 'principais' ? -1 : b === 'principais' ? 1 : a.localeCompare(b)));
   $('#branchList').innerHTML = order.map(g => `<div class="group ${picker.closed.has(g) && !q ? 'closed' : ''}" data-group="${esc(g)}">
       <div class="group-name">${picker.closed.has(g) && !q ? '▸' : '▾'} ${esc(g)} <span class="muted">(${groups.get(g).length})</span></div>
       ${groups.get(g).map(b => {
         const sel = picker.selected?.name === b.name && picker.selected?.source === b.source;
         const usedBy = used.get(`${b.source}:${b.name}`);
         return `<div class="branch ${sel ? 'sel' : ''}" data-branch="${esc(b.name)}">
-          <span class="bn">${esc(b.name)} ${usedBy ? `<span class="tag">entorno: ${esc(usedBy)}</span>` : ''}</span>
+          <span class="bn">${esc(b.name)} ${usedBy ? `<span class="tag">ambiente: ${esc(usedBy)}</span>` : ''}</span>
           <span class="when">${ago(b.date)}</span>
           <span class="sub"><code>${short(b.commit)}</code> ${esc(b.subject)} · ${esc(b.author)}</span>
         </div>`;
       }).join('')}
-    </div>`).join('') || `<div class="empty">${picker.source === 'local' ? 'No hay ramas del repo local (¿está configurado localRepoPath?).' : 'Ninguna rama coincide.'}</div>`;
-  $('#pickedLabel').innerHTML = picker.selected ? `Seleccionada: <code>${esc(picker.selected.name)}</code> (${SOURCE[picker.selected.source]})` : 'Ninguna rama seleccionada';
+    </div>`).join('') || `<div class="empty">${picker.source === 'local' ? 'Não há branches do repo local (localRepoPath está configurado?).' : 'Nenhuma branch corresponde.'}</div>`;
+  $('#pickedLabel').innerHTML = picker.selected ? `Selecionada: <code>${esc(picker.selected.name)}</code> (${SOURCE[picker.selected.source]})` : 'Nenhuma branch selecionada';
   $('#pickerOk').disabled = !picker.selected;
 }
 
@@ -418,8 +535,9 @@ $('#branchList').addEventListener('click', ev => {
   if (!row) return;
   picker.selected = { name: row.dataset.branch, source: picker.source };
   const f = $('#pickerForm');
-  if (!picker.env) f.name.value = slug(row.dataset.branch) + (picker.source === 'local' ? '-local' : '');
+  if (picker.mode === 'new') f.name.value = slug(row.dataset.branch) + (picker.source === 'local' ? '-local' : '');
   renderBranches();
+  loadConfigs();
 });
 $('#branchList').addEventListener('dblclick', ev => { if (ev.target.closest('[data-branch]')) $('#pickerOk').click(); });
 
@@ -428,13 +546,20 @@ $('#pickerForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   const f = ev.target, sel = picker.selected;
   try {
-    if (picker.env) {
-      await api('PUT', `/api/envs/${picker.env.name}`, { branch: sel.name, source: sel.source });
-      toast(`<b>${esc(picker.env.name)}</b> ahora sigue <code>${esc(sel.name)}</code>`);
+    if (picker.mode === 'edit') {
+      const env = picker.env, configuration = f.configuration.value;
+      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration });
+      const changed = sel.name !== env.branch || sel.source !== env.source || configuration !== env.configuration;
+      // A new branch or configuration only takes effect after a build, so redeploy right away.
+      if (changed && !env.job) await api('POST', `/api/envs/${env.name}/deploy`);
+      toast(`<b>${esc(env.name)}</b>: <code>${esc(sel.name)}</code> · ${esc(configuration)}${changed ? ' · a reimplantar…' : ''}`);
     } else {
       const name = f.name.value.trim() || slug(sel.name);
-      await api('POST', '/api/envs', { name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked });
-      toast(`Entorno <b>${esc(name)}</b> creado: desplegando <code>${esc(sel.name)}</code>…`);
+      await api('POST', '/api/envs', {
+        name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked,
+        copyFrom: picker.mode === 'copy' ? picker.env.name : null,
+      });
+      toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)}): a implantar <code>${esc(sel.name)}</code>…`);
     }
     $('#picker').close();
     refresh();
@@ -444,7 +569,7 @@ $('#pickerForm').addEventListener('submit', async ev => {
 $('#newEnv').onclick = () => openPicker();
 $('#fetch').onclick = async () => {
   $('#fetch').disabled = true;
-  try { await api('POST', '/api/fetch'); await refresh(); toast('Remoto y repo local revisados'); }
+  try { await api('POST', '/api/fetch'); await refresh(); toast('Remoto e repo local verificados'); }
   catch (err) { toast(esc(err.message), 'bad'); }
   finally { $('#fetch').disabled = false; }
 };

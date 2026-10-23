@@ -9,7 +9,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 builder.Host.UseWindowsService(o => o.ServiceName = "LegadosCI");
 
-var root = builder.Configuration["CiRoot"] ?? throw new InvalidOperationException("Falta CiRoot en appsettings.json.");
+// Por defecto la raiz del CI es la carpeta del repo Legados-CI (la que contiene engine\deploy.ps1 y ci.json).
+// Se busca subiendo desde el exe, asi funciona igual con dotnet run (bin\Debug\...) y con el publicado (service\).
+// Se puede sobrescribir con CiRoot en appsettings.json si los datos viven en otro sitio.
+var root = builder.Configuration["CiRoot"];
+if (string.IsNullOrWhiteSpace(root)) root = FindCiRoot(AppContext.BaseDirectory);
 var store = new CiStore(root);
 builder.WebHost.UseUrls(store.Load().ListenUrl);
 
@@ -66,6 +70,9 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, Cancel
 
 api.MapGet("/branches", (Mirror mirror) => mirror.Branches);
 
+api.MapGet("/configurations", (string? branch, string? source, Mirror mirror, CancellationToken ct) =>
+    mirror.ConfigurationsAsync(branch, source, ct));
+
 // Server-Sent Events: the panel refreshes as soon as something changes.
 api.MapGet("/events", async (HttpContext ctx, Notifier notifier, CancellationToken ct) =>
 {
@@ -96,9 +103,15 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
         return Results.BadRequest($"La rama '{req.Branch}' no existe ({source}).");
 
     string? error = null;
+    EnvConfig? template = null;
     var cfg = store.Update(c =>
     {
         if (c.Environments.Any(e => e.Name == name)) { error = $"Ya existe el entorno '{name}'."; return; }
+        if (!string.IsNullOrWhiteSpace(req.CopyFrom))
+        {
+            template = c.Environments.FirstOrDefault(e => e.Name == req.CopyFrom);
+            if (template is null) { error = $"No existe el entorno '{req.CopyFrom}' para duplicar."; return; }
+        }
         var port = req.Port ?? Enumerable.Range(8090, 200).First(p => c.Environments.All(e => e.Port != p) && !Poller.IsListening(p));
         if (c.Environments.Any(e => e.Port == port)) { error = $"El puerto {port} ya lo usa otro entorno."; return; }
         c.Environments.Add(new EnvConfig
@@ -107,11 +120,23 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
             Branch = req.Branch,
             Source = source,
             Port = port,
-            Configuration = string.IsNullOrWhiteSpace(req.Configuration) ? "Desenvolvimento" : req.Configuration,
-            AutoDeploy = req.AutoDeploy ?? true,
+            Configuration = !string.IsNullOrWhiteSpace(req.Configuration) ? req.Configuration : template?.Configuration ?? "Desenvolvimento",
+            HealthPath = template?.HealthPath ?? "/",
+            AutoDeploy = req.AutoDeploy ?? template?.AutoDeploy ?? true,
         });
     });
     if (error is not null) return Results.Conflict(error);
+    if (template is not null)
+    {
+        // The environment's own config transform (connection strings, etc.) travels with the copy.
+        var src = Path.Combine(store.Root, "envs", template.Name, "Web.local.config");
+        var dstDir = Path.Combine(store.Root, "envs", name);
+        if (File.Exists(src))
+        {
+            Directory.CreateDirectory(dstDir);
+            File.Copy(src, Path.Combine(dstDir, "Web.local.config"), overwrite: true);
+        }
+    }
     var env = cfg.Environments.First(e => e.Name == name);
     queue.Enqueue(name, JobKind.Deploy, "manual");
     return Results.Ok(env);
@@ -166,4 +191,12 @@ app.Run();
 
 bool EnvExists(string name) => store.Load().Environments.Any(e => e.Name == name);
 
-record EnvRequest(string? Name, string? Branch, string? Source, int? Port, string? Configuration, bool? AutoDeploy);
+static string FindCiRoot(string start)
+{
+    for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
+        if (File.Exists(Path.Combine(dir.FullName, "engine", "deploy.ps1")))
+            return dir.FullName;
+    return start;
+}
+
+record EnvRequest(string? Name, string? Branch, string? Source, int? Port, string? Configuration, bool? AutoDeploy, string? CopyFrom);

@@ -22,6 +22,8 @@ public sealed class CiConfig
     /// <summary>Auto-deploy waits this long without new commits, so a burst of commits builds once.</summary>
     public int QuietSec { get; set; } = 15;
     public string ListenUrl { get; set; } = "http://localhost:5080";
+    /// <summary>Carpeta de compilacion del engine (vacio = raiz\work). Conviene una ruta corta: el proyecto web genera rutas de mas de 260 caracteres.</summary>
+    public string WorkDir { get; set; } = "";
     public List<EnvConfig> Environments { get; set; } = [];
 }
 
@@ -73,8 +75,20 @@ public sealed class CiStore(string root)
         }
     }
 
-    CiConfig Read() => JsonSerializer.Deserialize<CiConfig>(File.ReadAllText(FilePath), Json)
-        ?? throw new InvalidOperationException($"{FilePath} esta vacio.");
+    CiConfig Read()
+    {
+        // Primera ejecucion (o carpeta recien creada): arranca con una config por defecto
+        // en lugar de reventar, y la deja escrita para que el usuario la edite.
+        if (!File.Exists(FilePath))
+        {
+            Directory.CreateDirectory(Root);
+            var fresh = new CiConfig();
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(fresh, Json));
+            return fresh;
+        }
+        return JsonSerializer.Deserialize<CiConfig>(File.ReadAllText(FilePath), Json)
+            ?? throw new InvalidOperationException($"{FilePath} esta vacio.");
+    }
 
     public string SiteDir(string env) => Path.Combine(Root, "envs", env, "site");
 

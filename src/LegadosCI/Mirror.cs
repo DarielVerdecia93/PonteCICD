@@ -113,6 +113,22 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         return list;
     }
 
+    /// <summary>Build configurations declared in the web project (csproj) of a branch, e.g. Desenvolvimento, Qualidade...</summary>
+    public async Task<List<string>> ConfigurationsAsync(string? branch, string? source, CancellationToken ct)
+    {
+        var b = branch is null ? Branches.FirstOrDefault() : Find(branch, source ?? BranchSource.Remote);
+        var projectFile = store.Load().ProjectFile.Replace('\\', '/');
+        if (b is null || string.IsNullOrWhiteSpace(projectFile)) return [];
+        var (code, output) = await Git.RunAsync(["show", $"{b.Commit}:{projectFile}"], store.MirrorDir, ct);
+        if (code != 0) return [];
+        // <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Qualidade|AnyCPU' ">
+        return System.Text.RegularExpressions.Regex
+            .Matches(output, @"'\$\(Configuration\)\|\$\(Platform\)'\s*==\s*'([^'|]+)\|")
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     async Task<bool> ReloadAsync(CancellationToken ct)
     {
         var (code, output) = await Git.RunAsync(

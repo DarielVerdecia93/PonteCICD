@@ -20,6 +20,7 @@
   "pollIntervalSec": 20,
   "quietSec": 15,
   "listenUrl": "http://localhost:5080",
+  "workDir": "C:\\lci-work",
   "environments": [
     {
       "name": "develop",
