@@ -41,7 +41,8 @@ function Use-Environment([string]$Name) {
 
     # Lectura defensiva de campos nuevos (StrictMode, pueden faltar en ci.json antiguo).
     $sitePath = if ($EnvCfg.PSObject.Properties['sitePath'] -and $EnvCfg.sitePath) { $EnvCfg.sitePath } else { '' }
-    $envBase = if ($sitePath) { $sitePath } else { Join-Path $Root "envs\$Name" }
+    # Sin sitePath explicito se usa la convencion por defecto C:\inetpub\wwwroot\deploys\<env> (dentro del arbol de IIS).
+    $envBase = if ($sitePath) { $sitePath } else { Join-Path $env:SystemDrive "inetpub\wwwroot\deploys\$Name" }
 
     $script:SiteName = if ($EnvCfg.PSObject.Properties['siteName'] -and $EnvCfg.siteName) { $EnvCfg.siteName } else { "LegadosCI-$Name" }
     $script:PoolName = if ($EnvCfg.PSObject.Properties['appPoolName'] -and $EnvCfg.appPoolName) { $EnvCfg.appPoolName } else { "LegadosCI-$Name" }

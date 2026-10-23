@@ -102,12 +102,24 @@ public sealed class CiStore(string root)
     /// <summary>Legacy (pre-IIS) site folder, kept only as the fallback when there is no release.</summary>
     public string SiteDir(string env) => Path.Combine(Root, "envs", env, "site");
 
-    /// <summary>Base folder of an environment: EnvConfig.SitePath when set, else &lt;Root&gt;\envs\&lt;name&gt;.</summary>
+    /// <summary>Base folder of an environment: EnvConfig.SitePath when set, else the default
+    /// C:\inetpub\wwwroot\deploys\&lt;name&gt; (new envs always store SitePath explicitly).</summary>
     public string EnvBase(EnvConfig env) =>
-        string.IsNullOrWhiteSpace(env.SitePath) ? Path.Combine(Root, "envs", env.Name) : env.SitePath;
+        string.IsNullOrWhiteSpace(env.SitePath) ? DefaultSitePath(env.Name) : env.SitePath;
 
     /// <summary>Default IIS site/pool name for an env when the stored value is empty.</summary>
     public static string DefaultSiteName(string env) => $"LegadosCI-{env}";
+
+    /// <summary>
+    /// Default base folder for a new environment, inside the IIS tree under a shared "deploys" folder:
+    /// C:\inetpub\wwwroot\deploys\&lt;env&gt;. Used when the user does not supply a SitePath, so the value is
+    /// stored explicitly in ci.json and both the service and the engine resolve the same path.
+    /// </summary>
+    public static string DefaultSitePath(string env)
+    {
+        var wwwroot = Environment.ExpandEnvironmentVariables(@"%SystemDrive%\inetpub\wwwroot");
+        return Path.Combine(wwwroot, "deploys", env);
+    }
 
     /// <summary>
     /// Folder that IIS currently serves for <paramref name="env"/>, following the current.txt contract
@@ -118,8 +130,8 @@ public sealed class CiStore(string root)
     public string ActiveReleaseDir(string env)
     {
         var cfg = Load().Environments.FirstOrDefault(e => e.Name == env);
-        var baseDir = cfg is null ? Path.Combine(Root, "envs", env) : EnvBase(cfg);
-        var legacy = cfg is null ? SiteDir(env) : Path.Combine(baseDir, "site");
+        var baseDir = cfg is null ? DefaultSitePath(env) : EnvBase(cfg);
+        var legacy = Path.Combine(baseDir, "site");
         var current = Path.Combine(baseDir, "current.txt");
         if (!File.Exists(current)) return legacy;
         string id;

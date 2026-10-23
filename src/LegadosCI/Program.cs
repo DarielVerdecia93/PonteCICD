@@ -127,7 +127,10 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     if (string.IsNullOrWhiteSpace(branch) || mirror.Find(branch, source) is null)
         return Results.BadRequest($"La rama '{branch}' no existe ({source}).");
 
+    // Sin ruta explicita se usa la convencion por defecto C:\inetpub\wwwroot\deploys\<env> (dentro del
+    // arbol de IIS), y se guarda en ci.json para que servicio y engine resuelvan la misma carpeta.
     var sitePath = (req.SitePath ?? "").Trim();
+    if (sitePath.Length == 0) sitePath = CiStore.DefaultSitePath(name);
     var (okPath, pathError) = EnvValidation.ValidateSitePath(sitePath, cfg0.Environments);
     if (!okPath) return Results.BadRequest(pathError);
 

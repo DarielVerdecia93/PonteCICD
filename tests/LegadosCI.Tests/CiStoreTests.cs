@@ -57,8 +57,9 @@ public class CiStoreTests
             var envBase = Path.Combine(root, "envs", "develop");
             Directory.CreateDirectory(Path.Combine(envBase, "site"));
 
-            // Write ci.json so the store can resolve the env's base (no SitePath -> default base).
-            var cfg = new CiConfig { Environments = { new EnvConfig { Name = "develop", Port = 8090 } } };
+            // Write ci.json so the store can resolve the env's base. SitePath is set explicitly to the
+            // temp base so the test controls the path (the default base is C:\inetpub\wwwroot\deploys\<env>).
+            var cfg = new CiConfig { Environments = { new EnvConfig { Name = "develop", Port = 8090, SitePath = envBase } } };
             File.WriteAllText(Path.Combine(root, "ci.json"), JsonSerializer.Serialize(cfg, CiStore.Json));
 
             var store = new CiStore(root);

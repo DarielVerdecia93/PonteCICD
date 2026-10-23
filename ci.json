@@ -4,7 +4,6 @@
   "projectFile": "ENMC.BalcaoUnico.UI.WebApplication\\ENMC.BalcaoUnico.UI.WebApplication.csproj",
   "packagesSource": "C:\\Users\\dverd\\source\\repos\\ENSE\\packages",
   "msbuild": "",
-  "iisExpress": "C:\\Program Files\\IIS Express\\iisexpress.exe",
   "excludeFromPublish": [
     "DBScripts"
   ],
@@ -29,7 +28,8 @@
       "port": 8090,
       "configuration": "Desenvolvimento",
       "healthPath": "/",
-      "autoDeploy": true
+      "autoDeploy": true,
+      "sitePath": "C:\\inetpub\\wwwroot\\deploys\\develop"
     }
   ]
 }
