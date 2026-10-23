@@ -19,5 +19,16 @@ switch ($Action) {
     'start'   { Start-Site; if (-not (Test-SiteHealth)) { throw 'El sitio no responde correctamente.' } }
     'stop'    { Stop-Site }
     'restart' { Stop-Site; Start-Site; if (-not (Test-SiteHealth)) { throw 'El sitio no responde correctamente.' } }
-    'purge'   { Stop-Site; Remove-Item $Paths.Env -Recurse -Force; Write-Ok "Eliminado $($Paths.Env)" }
+    'purge'   {
+        Stop-Site
+        Remove-Site
+        # Quitar los junctions de Preserve de cada release ANTES del borrado recursivo (no atravesar enlaces).
+        if (Test-Path $Paths.Releases) {
+            foreach ($r in @(Get-ChildItem -LiteralPath $Paths.Releases -Directory -ErrorAction SilentlyContinue)) {
+                Remove-PreserveJunctions $r.FullName
+            }
+        }
+        Remove-Item $Paths.Env -Recurse -Force
+        Write-Ok "Eliminado $($Paths.Env)"
+    }
 }

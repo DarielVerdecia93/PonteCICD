@@ -103,7 +103,7 @@ try {
         $webConfig.Save($webConfigPath)
     }
 
-    [pscustomobject]@{
+    $deployInfo = @{
         Commit        = $commit
         ShortCommit   = $short
         Subject       = $subject
@@ -111,33 +111,45 @@ try {
         Branch        = $EnvCfg.branch
         Configuration = $EnvCfg.configuration
         DeployedAt    = (Get-Date).ToString('s')
-    } | ConvertTo-Json | Set-Content (Join-Path $stage 'deploy-info.json') -Encoding UTF8
+    }
 
-    # ------------------------------------------------------------ 4. backup + swap
+    # ------------------------------------------------------------ 4. release + backup + swap (sin corte)
     $previous = Get-DeployInfo
-    Write-Step 'Deteniendo el sitio'
-    Stop-Site
+    $prevRelease = if (Test-Path $Paths.Current) { (Get-Content -LiteralPath $Paths.Current -Raw -Encoding ASCII).Trim() } else { '' }
+
+    Write-Step "Publicando release $short"
+    $releaseId = New-Release $stage $deployInfo
 
     Write-Step 'Guardando la version actual'
     $backup = New-SiteBackup 'deploy'
 
-    Write-Step "Desplegando $short"
-    Invoke-Robocopy $stage $Paths.Site $Cfg.preserve
+    Write-Step 'Asegurando el sitio en IIS'
+    Ensure-Site
 
-    Write-Step 'Arrancando el sitio'
-    Start-Site
-    if (-not (Test-SiteHealth)) {
-        if ($NoAutoRollback -or -not $backup) {
-            throw "El despliegue de $short no responde."
+    Write-Step "Activando release $short (swap de ruta fisica + recycle solapado)"
+    Switch-Release $releaseId
+
+    Write-Step 'Calentando la release nueva'
+    $warm = Invoke-WarmRelease
+
+    if (-not ($warm -and (Test-SiteHealth))) {
+        if ($NoAutoRollback) { throw "El despliegue de $short no responde." }
+        if ($prevRelease) {
+            Write-Step "Rollback de emergencia a la release anterior ($prevRelease)"
+            Switch-Release $prevRelease
+            Test-SiteHealth | Out-Null
+            throw "El despliegue de $short fallo la comprobacion de salud; se ha reactivado la release anterior."
+        } elseif ($backup) {
+            Write-Step "Rollback automatico a $(Split-Path $backup -Leaf)"
+            Restore-SiteBackup $backup
+            Test-SiteHealth | Out-Null
+            throw "El despliegue de $short fallo la comprobacion de salud; se ha restaurado la version anterior."
+        } else {
+            throw "El despliegue de $short no responde y no hay version previa que restaurar."
         }
-        Write-Step "Rollback automatico a $(Split-Path $backup -Leaf)"
-        Stop-Site
-        Restore-SiteBackup $backup
-        Start-Site
-        Test-SiteHealth | Out-Null
-        throw "El despliegue de $short fallo la comprobacion de salud; se ha restaurado la version anterior."
     }
 
+    Remove-OldReleases
     Remove-OldBackups
     Clear-Directory $stage
 
