@@ -1,13 +1,13 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using EnseCI;
+using LegadosCI;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = AppContext.BaseDirectory,
 });
-builder.Host.UseWindowsService(o => o.ServiceName = "EnseCI");
+builder.Host.UseWindowsService(o => o.ServiceName = "LegadosCI");
 
 var root = builder.Configuration["CiRoot"] ?? throw new InvalidOperationException("Falta CiRoot en appsettings.json.");
 var store = new CiStore(root);

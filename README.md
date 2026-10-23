@@ -1,6 +1,6 @@
-# ENSE CI
+# Legados CI
 
-CI/CD local para desplegar `ENMC.BalcaoUnico.UI.WebApplication` por rama, sin tocar el repositorio
+CI/CD local para desplegar proyectos .NET legados (p. ej. `ENMC.BalcaoUnico.UI.WebApplication`) por rama, sin tocar el repositorio
 ni la base de datos (la BD la administra otra parte: aqui solo se configura su connection string).
 
 Panel: **http://localhost:5080**
@@ -18,7 +18,7 @@ Panel: **http://localhost:5080**
   commits pendientes de desplegar y avisos al terminar cada ejecucion.
 - La compilacion dinamica de ASP.NET se hace en `envs\<entorno>\aspnet-temp` en vez de `%TEMP%`, donde
   **Smart App Control** bloquea las DLL generadas (error 0x800711C7).
-- Antivirus (Kaspersky): excluir esta carpeta, `service\EnseCI.exe` e `iisexpress.exe`, o bloqueara los procesos del CI.
+- Antivirus (Kaspersky): excluir esta carpeta, `service\LegadosCI.exe` e `iisexpress.exe`, o bloqueara los procesos del CI.
 - Cada deploy:
   1. exporta el commit con `git archive` (codigo limpio, el repo de trabajo no se toca);
   2. compila y publica con MSBuild (`/t:WebPublish`), sin `DBScripts` y con los ficheros extra de `includeInPublish`;
@@ -40,8 +40,8 @@ envs\<entorno>\backups     zips <entorno>_<fecha>_<commit>_<motivo>.zip
 envs\<entorno>\Web.local.config   (opcional) transformacion propia del entorno
 mirror.git                 mirror del remoto
 runs\                      historial de ejecuciones
-service\                   EnseCI publicado (servicio de Windows)
-src\EnseCI                 codigo del servicio (.NET 10)
+service\                   LegadosCI publicado (servicio de Windows)
+src\LegadosCI              codigo del servicio (.NET 10)
 ```
 
 ## Base de datos administrada
@@ -60,14 +60,14 @@ En PowerShell **como administrador**:
 Pide la contrasena de tu cuenta de Windows: el servicio corre con tu usuario para usar tus credenciales de git
 (Azure DevOps) e IIS Express. Desinstalar: `.\install-service.ps1 -Uninstall`.
 
-Sin instalarlo, tambien se puede ejecutar en una consola: `.\service\EnseCI.exe`.
+Sin instalarlo, tambien se puede ejecutar en una consola: `.\service\LegadosCI.exe`.
 
 ## Actualizar el servicio tras cambiar su codigo
 
 ```powershell
-Stop-Service EnseCI
-dotnet publish src\EnseCI -c Release -o service
-Start-Service EnseCI
+Stop-Service LegadosCI
+dotnet publish src\LegadosCI -c Release -o service
+Start-Service LegadosCI
 ```
 
 ## Uso desde consola (sin panel)

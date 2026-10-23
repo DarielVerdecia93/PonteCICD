@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
-# ENSE CI — .gitignore
-# Se versiona: codigo del servicio (src\EnseCI), motor PowerShell (engine\),
+# Legados CI — .gitignore
+# Se versiona: codigo del servicio (src\LegadosCI), motor PowerShell (engine\),
 # scripts, README y ci.json (config base, sin credenciales).
 # NO se versiona: artefactos de build, estado de runtime y secretos.
 # ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ Web.local.config
 [Oo]bj/
 *.user
 
-# --- Servicio publicado (se regenera con: dotnet publish src\EnseCI -o service)
+# --- Servicio publicado (se regenera con: dotnet publish src\LegadosCI -o service)
 /service/
 
 # --- Estado de runtime del CI -----------------------------------------------

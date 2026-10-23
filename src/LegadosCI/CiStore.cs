@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace EnseCI;
+namespace LegadosCI;
 
 public sealed class CiConfig
 {

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 
-namespace EnseCI;
+namespace LegadosCI;
 
 /// <summary>
 /// Detects new commits and decides when to deploy:

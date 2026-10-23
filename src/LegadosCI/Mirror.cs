@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace EnseCI;
+namespace LegadosCI;
 
 public static class BranchSource
 {
