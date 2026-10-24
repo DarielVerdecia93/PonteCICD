@@ -209,6 +209,14 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
             if (!okPath) { error = pathError; return; }
             env.SitePath = sitePath;
         }
+        if (req.Port is not null && req.Port.Value != env.Port)
+        {
+            var port = req.Port.Value;
+            if (port is < 1 or > 65535) { error = $"Puerto invalido: {port}."; return; }
+            if (c.Environments.Any(e => e.Name != name && e.Port == port))
+            { error = $"El puerto {port} ya lo usa otro entorno."; return; }
+            env.Port = port;
+        }
         env.Branch = branch;
         env.Source = source;
         if (!string.IsNullOrWhiteSpace(req.Configuration)) env.Configuration = req.Configuration;

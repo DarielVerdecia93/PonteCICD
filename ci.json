@@ -21,5 +21,19 @@
   "quietSec": 15,
   "listenUrl": "http://localhost:5080",
   "workDir": "C:\\lci-work",
-  "environments": []
+  "environments": [
+    {
+      "name": "validacao-caracterizacoes-spn",
+      "branch": "feature/validacao-caracterizacoes-SPN",
+      "source": "remote",
+      "port": 8091,
+      "configuration": "Desenvolvimento",
+      "healthPath": "/",
+      "autoDeploy": true,
+      "sitePath": "C:\\inetpub\\wwwroot\\ENSE",
+      "siteName": "",
+      "appPoolName": "",
+      "hostHeader": ""
+    }
+  ]
 }

@@ -253,21 +253,34 @@ function Remove-ReleaseTree([string]$Release) {
     Remove-Item -LiteralPath $Release -Recurse -Force
 }
 
-# Enumera las bindings http y anade *:<port>:<hostheader> solo si no hay ya una equivalente.
-# Trata *, 0.0.0.0 y la IP ausente como equivalentes. Nunca borra otras bindings.
+# Asegura que el sitio tenga EXACTAMENTE la binding http *:<port>:<hostheader> configurada:
+# anade la correcta si falta y elimina las http sobrantes (p. ej. de un puerto anterior tras cambiarlo).
+# Trata *, 0.0.0.0 y la IP ausente como equivalentes.
 function Ensure-Binding {
     $wildcards = @('*', '0.0.0.0', '')
     $existing = @(Get-WebBinding -Name $script:SiteName -Protocol http -ErrorAction SilentlyContinue)
+    $hasCorrect = $false
     foreach ($b in $existing) {
         $parts = ($b.bindingInformation -split ':', 3)
         $ip = if ($parts.Count -ge 1) { $parts[0] } else { '' }
         $port = if ($parts.Count -ge 2) { $parts[1] } else { '' }
         $bhost = if ($parts.Count -ge 3) { $parts[2] } else { '' }
         if (($wildcards -contains $ip) -and ($port -eq "$($EnvCfg.port)") -and ($bhost -eq $script:HostHeader)) {
-            return  # ya existe una binding equivalente
+            $hasCorrect = $true
         }
     }
-    New-WebBinding -Name $script:SiteName -Protocol http -Port $EnvCfg.port -HostHeader $script:HostHeader | Out-Null
+    if (-not $hasCorrect) {
+        New-WebBinding -Name $script:SiteName -Protocol http -Port $EnvCfg.port -HostHeader $script:HostHeader | Out-Null
+    }
+    # Eliminar bindings http de puertos que ya no corresponden (deja solo el configurado).
+    foreach ($b in @(Get-WebBinding -Name $script:SiteName -Protocol http -ErrorAction SilentlyContinue)) {
+        $parts = ($b.bindingInformation -split ':', 3)
+        $port = if ($parts.Count -ge 2) { $parts[1] } else { '' }
+        $bhost = if ($parts.Count -ge 3) { $parts[2] } else { '' }
+        if ($port -ne "$($EnvCfg.port)" -or $bhost -ne $script:HostHeader) {
+            Remove-WebBinding -Name $script:SiteName -Protocol http -Port ([int]$port) -HostHeader $bhost -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # Crea app pool / sitio / binding si faltan (idempotente) y aplica config de calentamiento + permisos.

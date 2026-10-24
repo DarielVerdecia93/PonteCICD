@@ -239,6 +239,9 @@
       <label class="muted">Configuração
         <select name="configuration" aria-label="Configuração de compilação"><option>Desenvolvimento</option></select>
       </label>
+      <label class="muted" title="Porta HTTP onde o IIS serve o site deste ambiente">Porta
+        <input name="port" type="number" min="1" max="65535" inputmode="numeric" placeholder="auto" style="width:80px">
+      </label>
       <label data-new-only class="muted"><input type="checkbox" name="autoDeploy" checked> auto-deploy</label>
       <button value="cancel" formnovalidate>Cancelar</button>
       <button class="primary" id="pickerOk" value="ok" disabled>Criar e implantar</button>
@@ -479,6 +482,8 @@ async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   f.q.value = '';
   f.name.value = mode === 'copy' ? `${env.name}-copia`.slice(0, 40) : '';   // "copia" vale como slug ([a-z0-9-])
   f.sitePath.value = mode === 'copy' ? (env?.sitePath || '') : '';
+  // Puerto: al editar muestra el actual; al crear/duplicar vacio = autoasignado (duplicar NO copia el puerto).
+  f.port.value = mode === 'edit' ? (env?.port ?? '') : '';
   f.autoDeploy.checked = env ? env.autoDeploy : true;
   f.configuration.innerHTML = `<option>${esc(env?.configuration || 'Desenvolvimento')}</option>`;
   $('#pickerErr').textContent = '';
@@ -557,21 +562,27 @@ $('#pickerForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   const f = ev.target, sel = picker.selected;
   const sitePath = f.sitePath.value.trim() || undefined;
+  const portVal = f.port.value.trim();
+  const port = portVal === '' ? undefined : parseInt(portVal, 10);
+  if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    $('#pickerErr').textContent = 'Porta invalida (1-65535).'; return;
+  }
   try {
     if (picker.mode === 'edit') {
       const env = picker.env, configuration = f.configuration.value;
-      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration, sitePath });
-      const changed = sel.name !== env.branch || sel.source !== env.source || configuration !== env.configuration;
-      // Uma nova branch ou configuração só surte efeito após compilar, por isso reimplanta já.
+      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration, sitePath, port });
+      const changed = sel.name !== env.branch || sel.source !== env.source
+        || configuration !== env.configuration || (port !== undefined && port !== env.port);
+      // Uma nova branch, configuração ou porta só surte efeito após recompilar/recriar binding, por isso reimplanta já.
       if (changed && !env.job) await api('POST', `/api/envs/${env.name}/deploy`);
-      toast(`<b>${esc(env.name)}</b>: <code>${esc(sel.name)}</code> · ${esc(configuration)}${changed ? ' · a reimplantar…' : ''}`);
+      toast(`<b>${esc(env.name)}</b>: <code>${esc(sel.name)}</code> · ${esc(configuration)}${port !== undefined ? ' · porta ' + port : ''}${changed ? ' · a reimplantar…' : ''}`);
     } else {
       const name = f.name.value.trim() || slug(sel.name);
       await api('POST', '/api/envs', {
         name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked,
-        sitePath, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
+        sitePath, port, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
       });
-      toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)}): a implantar <code>${esc(sel.name)}</code>…`);
+      toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)})${port !== undefined ? ' · porta ' + port : ''}: a implantar <code>${esc(sel.name)}</code>…`);
     }
     $('#picker').close();
     refresh();
