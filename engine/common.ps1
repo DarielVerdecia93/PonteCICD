@@ -108,13 +108,28 @@ function Exit-DeployLock {
 
 # ---------------------------------------------------------------- git
 
+# Expande marcadores ${VAR} en una cadena con las variables de entorno del proceso. Permite guardar la
+# URL del repo en ci.json sin el token (p. ej. https://${AZURE_DEVOPS_PAT}@dev.azure.com/...), poniendo
+# el PAT en una variable de entorno a nivel de maquina en vez de en texto claro en el repo.
+function Expand-EnvVars([string]$text) {
+    if (-not $text) { return $text }
+    [regex]::Replace($text, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}', {
+        param($m)
+        $v = [Environment]::GetEnvironmentVariable($m.Groups[1].Value)
+        if ($null -ne $v) { $v } else { $m.Value }
+    })
+}
+
 function Update-Mirror {
     $env:GIT_TERMINAL_PROMPT = '0'
     $env:GCM_INTERACTIVE = 'never'
+    $repoUrl = Expand-EnvVars $Cfg.repoUrl
     # Ramas del remoto en refs/heads/*, ramas del repo local en refs/local/* (mismo esquema que el servicio).
     if (-not (Test-Path $Mirror)) {
-        & git clone --bare --quiet $Cfg.repoUrl $Mirror 2>&1 | ForEach-Object { "$_" } | Out-Host
+        & git clone --bare --quiet $repoUrl $Mirror 2>&1 | ForEach-Object { "$_" } | Out-Host
     } else {
+        # Asegura que origin apunte a la URL expandida (con token), por si se clono sin el o el PAT cambio.
+        & git --git-dir $Mirror remote set-url origin $repoUrl 2>&1 | Out-Null
         & git --git-dir $Mirror fetch --prune --quiet origin '+refs/heads/*:refs/heads/*' 2>&1 | ForEach-Object { "$_" } | Out-Host
     }
     if ($LASTEXITCODE) { throw 'No se pudo actualizar el mirror git (credenciales o red).' }

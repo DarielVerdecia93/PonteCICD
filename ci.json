@@ -1,5 +1,5 @@
 {
-  "repoUrl": "https://AmbisigDevOps@dev.azure.com/AmbisigDevOps/ENSE/_git/ENSE",
+  "repoUrl": "https://${AZURE_DEVOPS_PAT}@dev.azure.com/AmbisigDevOps/ENSE/_git/ENSE",
   "solutionFile": "EMNC.BalcaoUnico.sln",
   "projectFile": "ENMC.BalcaoUnico.UI.WebApplication\\ENMC.BalcaoUnico.UI.WebApplication.csproj",
   "packagesSource": "C:\\Users\\dverd\\source\\repos\\ENSE\\packages",
@@ -15,21 +15,11 @@
   ],
   "healthTimeoutSec": 240,
   "keepBackups": 20,
+  "keepReleases": 5,
   "localRepoPath": "C:\\Users\\dverd\\source\\repos\\ENSE",
   "pollIntervalSec": 20,
   "quietSec": 15,
   "listenUrl": "http://localhost:5080",
   "workDir": "C:\\lci-work",
-  "environments": [
-    {
-      "name": "develop",
-      "branch": "feature/validacao-caracterizacoes-SPN",
-      "source": "remote",
-      "port": 8090,
-      "configuration": "Desenvolvimento",
-      "healthPath": "/",
-      "autoDeploy": true,
-      "sitePath": "C:\\inetpub\\wwwroot\\deploys\\develop"
-    }
-  ]
+  "environments": []
 }

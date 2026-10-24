@@ -36,6 +36,14 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
     public static string RefOf(string branch, string source) =>
         source == BranchSource.Local ? $"refs/local/{branch}" : $"refs/heads/{branch}";
 
+    /// <summary>Expands ${VAR} placeholders from process environment variables, so the repo URL can
+    /// carry a token stored in an env var (e.g. https://${AZURE_DEVOPS_PAT}@dev.azure.com/...) instead
+    /// of in plaintext in ci.json. An undefined variable is left as-is.</summary>
+    public static string ExpandEnvVars(string? text) =>
+        string.IsNullOrEmpty(text) ? (text ?? "") :
+        System.Text.RegularExpressions.Regex.Replace(text, @"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", m =>
+            Environment.GetEnvironmentVariable(m.Groups[1].Value) ?? m.Value);
+
     /// <summary>Checks the remote with ls-remote (cheap) and fetches only if a branch moved. Returns true if anything changed.</summary>
     public async Task<bool> SyncRemoteAsync(bool force, CancellationToken ct)
     {
@@ -43,11 +51,17 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         try
         {
             var cfg = store.Load();
+            var repoUrl = ExpandEnvVars(cfg.RepoUrl);
             if (!Directory.Exists(store.MirrorDir))
             {
-                var (code, output) = await Git.RunAsync(["clone", "--bare", "--quiet", cfg.RepoUrl, store.MirrorDir], null, ct);
+                var (code, output) = await Git.RunAsync(["clone", "--bare", "--quiet", repoUrl, store.MirrorDir], null, ct);
                 if (code != 0) return Fail($"git clone fallo: {output.Trim()}");
                 force = true;
+            }
+            else
+            {
+                // origin debe llevar la URL expandida (con token) para que ls-remote/fetch autentiquen.
+                await Git.RunAsync(["remote", "set-url", "origin", repoUrl], store.MirrorDir, ct);
             }
 
             if (!force)
