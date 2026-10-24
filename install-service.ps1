@@ -6,52 +6,33 @@
     El servicio corre ELEVADO porque crea y gobierna sitios y application pools de IIS
     (New-WebSite/New-WebAppPool, swap de physical path, bindings, warm-up). Para eso la cuenta
     del servicio debe pertenecer al grupo local de Administradores: este script la agrega si falta.
-    Normalmente se usa TU cuenta de Windows (asi conserva tus credenciales de git hacia Azure DevOps);
-    si no indicas cuenta, como fallback el servicio puede correr como LocalSystem, que ya es
-    administrador local pero NO lleva tus credenciales de git (necesitaras configurar git a nivel de
-    sistema - ver install-service: git credential system / git config --system). La contrasena la pide
-    Windows; el script no la guarda.
+
+    Opciones de cuenta:
+      - Por defecto usa TU cuenta de Windows (asi conserva tus credenciales de git hacia Azure DevOps);
+        Windows pide la contrasena, el script no la guarda. No sirve si inicias sesion con cuenta
+        Microsoft (PIN/Hello) sin una contrasena local comoda.
+      - Con -LocalSystem el servicio corre como LocalSystem: ya es administrador local y NO pide
+        contrasena. OJO: LocalSystem NO lleva tus credenciales de git; para un repo privado de Azure
+        DevOps hay que configurar git a nivel de sistema con un PAT (ver iis-migration-notes.md).
 
     Antes de arrancar verifica que IIS este presente (W3SVC, WAS, el modulo WebAdministration y la
     caracteristica Web-AppInit). Si falta IIS avisa (no aborta: puede que lo estes instalando en paralelo).
 
 .EXAMPLE
-    .\install-service.ps1
+    .\install-service.ps1                 # corre con TU cuenta (pide contrasena de Windows)
+    .\install-service.ps1 -LocalSystem    # corre como LocalSystem (sin contrasena)
     .\install-service.ps1 -Uninstall
 #>
-param([switch]$Uninstall)
+param(
+    [switch]$Uninstall,
+    [switch]$LocalSystem
+)
 
 $ErrorActionPreference = 'Stop'
 $name = 'LegadosCI'
 $exe = Join-Path $PSScriptRoot 'service\LegadosCI.exe'
 
-if (Get-Service $name -ErrorAction SilentlyContinue) {
-    Stop-Service $name -ErrorAction SilentlyContinue
-    & sc.exe delete $name | Out-Null
-    Start-Sleep -Seconds 2
-    Write-Host "Servicio $name eliminado."
-}
-if ($Uninstall) { return }
-
-if (-not (Test-Path $exe)) { throw "No existe $exe. Publica antes: dotnet publish src\LegadosCI -c Release -o service" }
-Get-Process LegadosCI -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia en modo consola, si la hay
-
-$cred = Get-Credential -UserName ".\$env:USERNAME" -Message 'Cuenta con la que correra Legados CI (la tuya: necesita acceso git a Azure DevOps)'
-
-# Un servicio solo puede arrancar con una cuenta que tenga el derecho "Iniciar sesion como servicio".
-$sid = (New-Object Security.Principal.NTAccount ($cred.UserName -replace '^\.\\', "$env:COMPUTERNAME\")).Translate([Security.Principal.SecurityIdentifier]).Value
-$tmp = Join-Path $env:TEMP 'legadosci-rights'
-New-Item -ItemType Directory -Force $tmp | Out-Null
-& secedit /export /cfg "$tmp\current.inf" /areas USER_RIGHTS | Out-Null
-$current = (Select-String "$tmp\current.inf" -Pattern '^SeServiceLogonRight\s*=\s*(.*)$').Matches | ForEach-Object { $_.Groups[1].Value }
-if ("$current" -notmatch [regex]::Escape("*$sid")) {
-    $value = if ($current) { "$current,*$sid" } else { "*$sid" }
-    @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', "SeServiceLogonRight = $value") |
-        Set-Content "$tmp\grant.inf" -Encoding Unicode
-    & secedit /configure /db "$tmp\grant.sdb" /cfg "$tmp\grant.inf" /areas USER_RIGHTS | Out-Null
-    Write-Host "Concedido 'Iniciar sesion como servicio' a $($cred.UserName)."
-}
-Remove-Item $tmp -Recurse -Force
+# ---------------------------------------------------------------- helpers
 
 # El servicio administra IIS, asi que su cuenta debe ser Administrador local. La agregamos si falta.
 # El grupo se llama 'Administradores' en Windows en espanol y 'Administrators' en ingles; probamos ambos
@@ -75,14 +56,29 @@ function Add-ToLocalAdministrators([string]$member) {
             Write-Host "  No se pudo usar el modulo para el grupo '$group': $($_.Exception.Message)"
         }
     }
-    # Fallback sin el modulo LocalAccounts: net localgroup (ignora el error si ya es miembro).
     foreach ($group in @('Administradores', 'Administrators')) {
         & net localgroup $group $member /add 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { Write-Host "  Agregado $member al grupo $group (net localgroup)."; return }
     }
     Write-Host "  AVISO: no se pudo confirmar la pertenencia a Administradores; agregala manualmente si el servicio no puede administrar IIS."
 }
-Add-ToLocalAdministrators $cred.UserName
+
+# Concede a una cuenta el derecho "Iniciar sesion como servicio" (necesario para arrancar como servicio).
+function Grant-ServiceLogonRight([string]$account) {
+    $sid = (New-Object Security.Principal.NTAccount ($account -replace '^\.\\', "$env:COMPUTERNAME\")).Translate([Security.Principal.SecurityIdentifier]).Value
+    $tmp = Join-Path $env:TEMP 'legadosci-rights'
+    New-Item -ItemType Directory -Force $tmp | Out-Null
+    & secedit /export /cfg "$tmp\current.inf" /areas USER_RIGHTS | Out-Null
+    $current = (Select-String "$tmp\current.inf" -Pattern '^SeServiceLogonRight\s*=\s*(.*)$').Matches | ForEach-Object { $_.Groups[1].Value }
+    if ("$current" -notmatch [regex]::Escape("*$sid")) {
+        $value = if ($current) { "$current,*$sid" } else { "*$sid" }
+        @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO$"', 'Revision=1', '[Privilege Rights]', "SeServiceLogonRight = $value") |
+            Set-Content "$tmp\grant.inf" -Encoding Unicode
+        & secedit /configure /db "$tmp\grant.sdb" /cfg "$tmp\grant.inf" /areas USER_RIGHTS | Out-Null
+        Write-Host "Concedido 'Iniciar sesion como servicio' a $account."
+    }
+    Remove-Item $tmp -Recurse -Force
+}
 
 # Verificacion de IIS antes de arrancar. No abortamos: el usuario puede estar instalando IIS en paralelo.
 function Test-IisReadiness {
@@ -120,6 +116,39 @@ function Test-IisReadiness {
         Write-Host 'IIS listo: W3SVC, WAS, WebAdministration y Application Initialization presentes.'
     }
 }
+
+# ---------------------------------------------------------------- (re)instalacion
+
+if (Get-Service $name -ErrorAction SilentlyContinue) {
+    Stop-Service $name -ErrorAction SilentlyContinue
+    & sc.exe delete $name | Out-Null
+    Start-Sleep -Seconds 2
+    Write-Host "Servicio $name eliminado."
+}
+if ($Uninstall) { return }
+
+if (-not (Test-Path $exe)) { throw "No existe $exe. Publica antes: dotnet publish src\LegadosCI -c Release -o service" }
+Get-Process LegadosCI -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia en modo consola, si la hay
+
+if ($LocalSystem) {
+    Test-IisReadiness
+    New-Service -Name $name -BinaryPathName "`"$exe`"" -DisplayName 'Legados CI' `
+        -Description 'Deploy continuo de proyectos legados por rama (panel en http://localhost:5080)' `
+        -StartupType Automatic | Out-Null   # sin -Credential => LocalSystem (ya es administrador local)
+    & sc.exe failure $name reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
+    Start-Service $name
+    Write-Host ''
+    Write-Host "Servicio $name instalado como LocalSystem y arrancado. Panel: http://localhost:5080"
+    Write-Host 'NOTA: LocalSystem no lleva tus credenciales de git. Si el repo es privado (Azure DevOps),'
+    Write-Host '      configura git a nivel de sistema con un PAT, por ejemplo:'
+    Write-Host '        git config --system credential.helper store'
+    Write-Host '        (y guarda el PAT la primera vez, o usa la URL https://<PAT>@dev.azure.com/...)'
+    return
+}
+
+$cred = Get-Credential -UserName ".\$env:USERNAME" -Message 'Cuenta con la que correra Legados CI (la tuya: necesita acceso git a Azure DevOps)'
+Grant-ServiceLogonRight $cred.UserName
+Add-ToLocalAdministrators $cred.UserName
 Test-IisReadiness
 
 New-Service -Name $name -BinaryPathName "`"$exe`"" -DisplayName 'Legados CI' `
