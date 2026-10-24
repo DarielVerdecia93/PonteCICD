@@ -57,7 +57,7 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
         }
         catch (Exception ex)
         {
-            log.LogDebug(ex, "sitestate -All fallo; IIS se trata como no disponible");
+            log.LogDebug(ex, "sitestate -All falhou; o IIS e tratado como nao disponivel");
         }
 
         lock (_lock)
@@ -77,7 +77,7 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
         }
         catch (Exception ex)
         {
-            log.LogDebug(ex, "sitestate -Preflight fallo");
+            log.LogDebug(ex, "sitestate -Preflight falhou");
             return false;
         }
     }
@@ -97,7 +97,7 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
                   "-File", Path.Combine(store.EngineDir, "sitestate.ps1"), arg])
             psi.ArgumentList.Add(a);
 
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar powershell.exe.");
+        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Nao foi possivel iniciar o powershell.exe.");
         var stdout = proc.StandardOutput.ReadToEnd();
         if (!proc.WaitForExit((int)RunTimeout.TotalMilliseconds))
         {

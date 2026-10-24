@@ -22,7 +22,7 @@ Use-Environment $Environment
 Enter-DeployLock
 try {
     # ------------------------------------------------------------ 1. source
-    Write-Step "Preparando codigo fuente ($($EnvCfg.branch))"
+    Write-Step "A preparar o codigo-fonte ($($EnvCfg.branch))"
     if (-not $NoFetch) { Update-Mirror }
     if (-not $Ref) {
         $isLocal = $EnvCfg.PSObject.Properties['source'] -and $EnvCfg.source -eq 'local'
@@ -37,9 +37,9 @@ try {
     Clear-Directory $srcRoot -Keep 'packages'
     $tar = Join-Path $WorkDir 'src.tar'
     & git -C $Mirror archive --format=tar -o $tar $commit
-    if ($LASTEXITCODE) { throw 'git archive fallo.' }
+    if ($LASTEXITCODE) { throw 'Falha no git archive.' }
     & tar -xf $tar -C $srcRoot
-    if ($LASTEXITCODE) { throw 'No se pudo extraer el codigo fuente.' }
+    if ($LASTEXITCODE) { throw 'Nao foi possivel extrair o codigo-fonte.' }
     Remove-Item $tar -Force
     Write-Ok "Commit $short - $subject ($author)"
 
@@ -47,15 +47,15 @@ try {
     $packages = Join-Path $srcRoot 'packages'
     if ($Cfg.packagesSource -and (Test-Path $Cfg.packagesSource)) {
         & robocopy $Cfg.packagesSource $packages /E /R:2 /W:2 /NP /NFL /NDL /NJH /NJS | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "No se pudieron copiar los paquetes desde $($Cfg.packagesSource)." }
+        if ($LASTEXITCODE -ge 8) { throw "Nao foi possivel copiar os pacotes a partir de $($Cfg.packagesSource)." }
     }
     $msbuild = Get-MSBuildPath
     Write-Ok "MSBuild: $msbuild"
     & $msbuild (Join-Path $srcRoot $Cfg.solutionFile) /nologo /v:quiet /t:Restore /p:RestorePackagesConfig=true | Out-Host
-    if ($LASTEXITCODE) { Write-Warn 'La restauracion de paquetes NuGet fallo; se intenta compilar con los paquetes existentes.' }
+    if ($LASTEXITCODE) { Write-Warn 'A restauracao de pacotes NuGet falhou; tenta-se compilar com os pacotes existentes.' }
 
     # ------------------------------------------------------------ 2. build + publish
-    Write-Step "Compilando y publicando ($($EnvCfg.configuration))"
+    Write-Step "A compilar e publicar ($($EnvCfg.configuration))"
     $stage = Join-Path $WorkDir 'stage'
     Clear-Directory $stage
     $buildLog = Join-Path $WorkDir 'build.log'
@@ -68,25 +68,25 @@ try {
         /p:DeployExcludeFolders="$(@($Cfg.excludeFromPublish) -join '%3B')" `
         /p:DeployIncludeFiles="$(@($Cfg.includeInPublish) -join '%3B')" `
         /p:ExcludeApp_Data=false /p:AutoParameterizationWebConfigConnectionStrings=false | Out-Host
-    if ($LASTEXITCODE) { throw "La compilacion fallo (codigo $LASTEXITCODE). Log completo: $buildLog. No se ha tocado el sitio." }
-    if (-not (Test-Path (Join-Path $stage 'Web.config'))) { throw 'La publicacion no genero Web.config.' }
+    if ($LASTEXITCODE) { throw "A compilacao falhou (codigo $LASTEXITCODE). Log completo: $buildLog. O site nao foi alterado." }
+    if (-not (Test-Path (Join-Path $stage 'Web.config'))) { throw 'A publicacao nao gerou o Web.config.' }
     foreach ($p in $Cfg.preserve) { Remove-Item (Join-Path $stage $p) -Recurse -Force -ErrorAction SilentlyContinue }
-    Write-Ok 'Publicacion generada.'
+    Write-Ok 'Publicacao gerada.'
 
     # ------------------------------------------------------------ 3. local config
     $xdt = $Paths.LocalXdt
     if (-not (Test-Path $xdt)) { $xdt = Join-Path $Root 'Web.local.config' }
     if (Test-Path $xdt) {
-        Write-Step "Aplicando $xdt"
+        Write-Step "A aplicar $xdt"
         $base = Join-Path $WorkDir 'Web.base.config'
         Copy-Item (Join-Path $stage 'Web.config') $base -Force
         & $msbuild (Join-Path $PSScriptRoot 'transform.proj') /nologo /v:minimal /clp:ErrorsOnly `
             /p:TasksDll="$(Get-TransformTasksDll $msbuild)" `
             /p:Source="$base" /p:Transform="$xdt" /p:Destination="$(Join-Path $stage 'Web.config')" | Out-Host
-        if ($LASTEXITCODE) { throw 'Fallo la transformacion de Web.config. No se ha tocado el sitio.' }
+        if ($LASTEXITCODE) { throw 'Falha na transformacao do Web.config. O site nao foi alterado.' }
         Remove-Item $base -Force
     } else {
-        Write-Warn 'No hay Web.local.config (ni del entorno ni global): se usa el Web.config del repo tal cual.'
+        Write-Warn 'Nao ha Web.local.config (nem do ambiente nem global): usa-se o Web.config do repo tal como esta.'
     }
 
     # La compilacion dinamica de ASP.NET (global.asax, vistas) se hace en una carpeta del entorno y no en
@@ -117,35 +117,35 @@ try {
     $previous = Get-DeployInfo
     $prevRelease = if (Test-Path $Paths.Current) { (Get-Content -LiteralPath $Paths.Current -Raw -Encoding ASCII).Trim() } else { '' }
 
-    Write-Step "Publicando release $short"
+    Write-Step "A publicar release $short"
     $releaseId = New-Release $stage $deployInfo
 
-    Write-Step 'Guardando la version actual'
+    Write-Step 'A guardar a versao atual'
     $backup = New-SiteBackup 'deploy'
 
-    Write-Step 'Asegurando el sitio en IIS'
+    Write-Step 'A assegurar o site no IIS'
     Ensure-Site
 
-    Write-Step "Activando release $short (swap de ruta fisica + recycle solapado)"
+    Write-Step "A ativar release $short (troca de caminho fisico + recycle sobreposto)"
     Switch-Release $releaseId
 
-    Write-Step 'Calentando la release nueva'
+    Write-Step 'A aquecer a release nova'
     $warm = Invoke-WarmRelease
 
     if (-not ($warm -and (Test-SiteHealth))) {
-        if ($NoAutoRollback) { throw "El despliegue de $short no responde." }
+        if ($NoAutoRollback) { throw "A implantacao de $short nao responde." }
         if ($prevRelease) {
-            Write-Step "Rollback de emergencia a la release anterior ($prevRelease)"
+            Write-Step "Rollback de emergencia para a release anterior ($prevRelease)"
             Switch-Release $prevRelease
             Test-SiteHealth | Out-Null
-            throw "El despliegue de $short fallo la comprobacion de salud; se ha reactivado la release anterior."
+            throw "A implantacao de $short falhou a verificacao de saude; a release anterior foi reativada."
         } elseif ($backup) {
-            Write-Step "Rollback automatico a $(Split-Path $backup -Leaf)"
+            Write-Step "Rollback automatico para $(Split-Path $backup -Leaf)"
             Restore-SiteBackup $backup
             Test-SiteHealth | Out-Null
-            throw "El despliegue de $short fallo la comprobacion de salud; se ha restaurado la version anterior."
+            throw "A implantacao de $short falhou a verificacao de saude; a versao anterior foi restaurada."
         } else {
-            throw "El despliegue de $short no responde y no hay version previa que restaurar."
+            throw "A implantacao de $short nao responde e nao ha versao anterior para restaurar."
         }
     }
 
@@ -153,8 +153,8 @@ try {
     Remove-OldBackups
     Clear-Directory $stage
 
-    $from = if ($previous) { $previous.ShortCommit } else { '(vacio)' }
-    Write-Step "Despliegue completado: $from -> $short en $SiteUrl"
+    $from = if ($previous) { $previous.ShortCommit } else { '(vazio)' }
+    Write-Step "Implantacao concluida: $from -> $short em $SiteUrl"
 }
 finally {
     Exit-DeployLock

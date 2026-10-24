@@ -53,7 +53,7 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Error revisando ramas");
+                log.LogError(ex, "Erro ao verificar branches");
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
         }
@@ -84,7 +84,7 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
             }
             if (DateTimeOffset.Now < w.Since.AddSeconds(cfg.QuietSec)) continue;
 
-            log.LogInformation("{Branch} en {Commit}: deploy automatico de {Env}", env.Branch, head.Commit[..7], env.Name);
+            log.LogInformation("{Branch} em {Commit}: deploy automatico de {Env}", env.Branch, head.Commit[..7], env.Name);
             _waiting.TryRemove(env.Name, out _);
             queue.Enqueue(env.Name, JobKind.Deploy, "auto"); // resolves the newest commit when it starts
         }
@@ -110,7 +110,7 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
         watcher.Renamed += OnChange;
         watcher.Deleted += OnChange;
         watcher.EnableRaisingEvents = true;
-        log.LogInformation("Vigilando ramas del repo local {Repo}", repo);
+        log.LogInformation("A vigiar branches do repo local {Repo}", repo);
         return watcher;
     }
 
@@ -119,7 +119,7 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
     {
         if (!probe.IisAvailable)
         {
-            log.LogWarning("IIS no disponible: no se arrancan los sitios desplegados al iniciar.");
+            log.LogWarning("IIS nao disponivel: os sites implantados nao sao iniciados no arranque.");
             return;
         }
         foreach (var env in store.Load().Environments)

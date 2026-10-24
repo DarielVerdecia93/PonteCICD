@@ -55,7 +55,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
             if (!Directory.Exists(store.MirrorDir))
             {
                 var (code, output) = await Git.RunAsync(["clone", "--bare", "--quiet", repoUrl, store.MirrorDir], null, ct);
-                if (code != 0) return Fail($"git clone fallo: {output.Trim()}");
+                if (code != 0) return Fail($"git clone falhou: {output.Trim()}");
                 force = true;
             }
             else
@@ -67,7 +67,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
             if (!force)
             {
                 var (code, output) = await Git.RunAsync(["ls-remote", "--heads", "origin"], store.MirrorDir, ct);
-                if (code != 0) return Fail($"No se pudo consultar el remoto: {output.Trim()}");
+                if (code != 0) return Fail($"Nao foi possivel consultar o remoto: {output.Trim()}");
                 var remote = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                     .Select(l => l.TrimEnd('\r').Split('\t'))
                     .Where(p => p.Length == 2 && p[1].StartsWith("refs/heads/"))
@@ -81,7 +81,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
             }
 
             var fetch = await Git.RunAsync(["fetch", "--prune", "--quiet", "origin", "+refs/heads/*:refs/heads/*"], store.MirrorDir, ct);
-            if (fetch.Code != 0) return Fail($"git fetch fallo: {fetch.Output.Trim()}");
+            if (fetch.Code != 0) return Fail($"git fetch falhou: {fetch.Output.Trim()}");
             return await ReloadAsync(ct);
         }
         finally
@@ -100,7 +100,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         try
         {
             var (code, output) = await Git.RunAsync(["fetch", "--prune", "--quiet", localRepo, "+refs/heads/*:refs/local/*"], store.MirrorDir, ct);
-            if (code != 0) return Fail($"No se pudo leer el repo local: {output.Trim()}");
+            if (code != 0) return Fail($"Nao foi possivel ler o repo local: {output.Trim()}");
             return await ReloadAsync(ct);
         }
         finally
@@ -148,7 +148,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         var (code, output) = await Git.RunAsync(
             ["for-each-ref", "refs/heads", "refs/local", "--sort=-committerdate", $"--format=%(refname)%09{CommitFormat}"],
             store.MirrorDir, ct);
-        if (code != 0) return Fail($"No se pudieron leer las ramas: {output.Trim()}");
+        if (code != 0) return Fail($"Nao foi possivel ler os branches: {output.Trim()}");
 
         var branches = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.TrimEnd('\r').Split('\t', 5))

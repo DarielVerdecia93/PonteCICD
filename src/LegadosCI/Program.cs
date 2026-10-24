@@ -36,9 +36,9 @@ app.UseStaticFiles();
 {
     var log = app.Services.GetRequiredService<ILogger<Program>>();
     if (!IsElevated())
-        log.LogWarning("El servicio no se ejecuta como administrador: IIS no podra crearse/controlarse. Reinstale el servicio con permisos elevados.");
+        log.LogWarning("O servico nao e executado como administrador: o IIS nao podera ser criado/controlado. Reinstale o servico com permissoes elevadas.");
     if (!app.Services.GetRequiredService<IisStateProbe>().PreflightOk())
-        log.LogWarning("IIS no disponible (preflight): instale IIS (Web-Server, Web-Mgmt-Console) y reinicie. Modo degradado.");
+        log.LogWarning("IIS nao disponivel (preflight): instale o IIS (Web-Server, Web-Mgmt-Console) e reinicie. Modo degradado.");
 }
 
 var api = app.MapGroup("/api");
@@ -110,7 +110,7 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
 {
     var name = (req.Name ?? "").Trim().ToLowerInvariant();
     if (!Regex.IsMatch(name, "^[a-z0-9][a-z0-9-]{0,39}$"))
-        return Results.BadRequest("Nombre no valido: minusculas, numeros y guiones (max. 40).");
+        return Results.BadRequest("Nome invalido: minusculas, numeros e hifens (max. 40).");
 
     var cfg0 = store.Load();
     // Duplicate (copyFrom): seed from a template for the fields the request omits, but never copy the
@@ -119,13 +119,13 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     if (!string.IsNullOrWhiteSpace(req.CopyFrom))
     {
         template = cfg0.Environments.FirstOrDefault(e => e.Name == req.CopyFrom);
-        if (template is null) return Results.BadRequest($"El entorno origen '{req.CopyFrom}' no existe.");
+        if (template is null) return Results.BadRequest($"O ambiente de origem '{req.CopyFrom}' nao existe.");
     }
 
     var branch = req.Branch ?? template?.Branch;
     var source = req.Source ?? template?.Source ?? BranchSource.Remote;
     if (string.IsNullOrWhiteSpace(branch) || mirror.Find(branch, source) is null)
-        return Results.BadRequest($"La rama '{branch}' no existe ({source}).");
+        return Results.BadRequest($"O branch '{branch}' nao existe ({source}).");
 
     // Sin ruta explicita se usa la convencion por defecto C:\inetpub\wwwroot\deploys\<env> (dentro del
     // arbol de IIS), y se guarda en ci.json para que servicio y engine resuelvan la misma carpeta.
@@ -137,15 +137,15 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     string? error = null;
     var cfg = store.Update(c =>
     {
-        if (c.Environments.Any(e => e.Name == name)) { error = $"Ya existe el entorno '{name}'."; return; }
+        if (c.Environments.Any(e => e.Name == name)) { error = $"Ja existe o ambiente '{name}'."; return; }
         var port = req.Port ?? Enumerable.Range(8090, 200).First(p => c.Environments.All(e => e.Port != p) && PortProbe.IsFree(p));
-        if (c.Environments.Any(e => e.Port == port)) { error = $"El puerto {port} ya lo usa otro entorno."; return; }
+        if (c.Environments.Any(e => e.Port == port)) { error = $"A porta {port} ja esta a ser usada por outro ambiente."; return; }
 
         var siteName = CiStore.DefaultSiteName(name);
         if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.SiteName) ? CiStore.DefaultSiteName(e.Name) : e.SiteName) == siteName))
-        { error = $"El sitio IIS '{siteName}' ya lo usa otro entorno."; return; }
+        { error = $"O site IIS '{siteName}' ja esta a ser usado por outro ambiente."; return; }
         if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.AppPoolName) ? CiStore.DefaultSiteName(e.Name) : e.AppPoolName) == siteName))
-        { error = $"El pool IIS '{siteName}' ya lo usa otro entorno."; return; }
+        { error = $"O pool IIS '{siteName}' ja esta a ser usado por outro ambiente."; return; }
 
         c.Environments.Add(new EnvConfig
         {
@@ -201,7 +201,7 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
         if (env is null) return;
         var branch = req.Branch ?? env.Branch;
         var source = req.Source ?? env.Source;
-        if (mirror.Find(branch, source) is null) { error = $"La rama '{branch}' no existe ({source})."; return; }
+        if (mirror.Find(branch, source) is null) { error = $"O branch '{branch}' nao existe ({source})."; return; }
         if (req.SitePath is not null)
         {
             var sitePath = req.SitePath.Trim();
@@ -212,9 +212,9 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
         if (req.Port is not null && req.Port.Value != env.Port)
         {
             var port = req.Port.Value;
-            if (port is < 1 or > 65535) { error = $"Puerto invalido: {port}."; return; }
+            if (port is < 1 or > 65535) { error = $"Porta invalida: {port}."; return; }
             if (c.Environments.Any(e => e.Name != name && e.Port == port))
-            { error = $"El puerto {port} ya lo usa otro entorno."; return; }
+            { error = $"A porta {port} ja esta a ser usada por outro ambiente."; return; }
             env.Port = port;
         }
         env.Branch = branch;
@@ -235,8 +235,8 @@ api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, J
 {
     if (!EnvExists(name)) return Results.NotFound();
     if (!Enum.TryParse<JobKind>(action, ignoreCase: true, out var kind) || kind == JobKind.Purge)
-        return Results.BadRequest($"Accion desconocida: {action}");
-    if (queue.HasPending(name)) return Results.Conflict($"Ya hay una operacion en curso para {name}.");
+        return Results.BadRequest($"Acao desconhecida: {action}");
+    if (queue.HasPending(name)) return Results.Conflict($"Ja existe uma operacao em curso para {name}.");
     return Results.Ok(queue.Enqueue(name, kind, "manual", arg));
 });
 

@@ -26,7 +26,7 @@ if ($Preflight) {
         $w3svc = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
         $was = Get-Service -Name 'WAS' -ErrorAction SilentlyContinue
         if (-not $w3svc -or -not $was) {
-            $result.message = 'Servicios IIS (W3SVC/WAS) no encontrados: instale IIS (Web-Server).'
+            $result.message = 'Servicos IIS (W3SVC/WAS) nao encontrados: instale o IIS (Web-Server).'
         } else {
             $result.iisAvailable = $true
             # Web-AppInit (Application Initialization) es opcional: sin el, los deploys usan corte breve.
@@ -37,14 +37,14 @@ if ($Preflight) {
             if ($appInit -and $appInit.State -eq 'Enabled') {
                 $result.webAppInit = $true
                 $result.ok = $true
-                $result.message = 'IIS disponible (Application Initialization instalado).'
+                $result.message = 'IIS disponivel (Application Initialization instalado).'
             } else {
                 $result.ok = $true
-                $result.message = 'IIS disponible; Application Initialization NO instalado: los despliegues usaran corte breve.'
+                $result.message = 'IIS disponivel; Application Initialization NAO instalado: as implantacoes usarao um corte breve.'
             }
         }
     } catch {
-        $result.message = "WebAdministration no disponible: instale IIS (Web-Server, Web-Mgmt-Console). ($($_.Exception.Message))"
+        $result.message = "WebAdministration nao disponivel: instale o IIS (Web-Server, Web-Mgmt-Console). ($($_.Exception.Message))"
     }
     [pscustomobject]$result | ConvertTo-Json -Compress
     return
@@ -77,6 +77,6 @@ if ($All) {
     $states = @(foreach ($e in $Cfg.environments) { Get-EnvState $e.name })
     ConvertTo-Json @($states) -Compress
 } else {
-    if (-not $Environment) { throw 'Indique -Environment <nombre>, -All o -Preflight.' }
+    if (-not $Environment) { throw 'Indique -Environment <nome>, -All ou -Preflight.' }
     (Get-EnvState $Environment) | ConvertTo-Json -Compress
 }

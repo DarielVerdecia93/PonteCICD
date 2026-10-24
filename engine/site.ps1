@@ -16,9 +16,9 @@ trap { Write-Host "ERROR: $($_.Exception.Message)"; exit 1 }
 Use-Environment $Environment
 
 switch ($Action) {
-    'start'   { Start-Site; if (-not (Test-SiteHealth)) { throw 'El sitio no responde correctamente.' } }
+    'start'   { Start-Site; if (-not (Test-SiteHealth)) { throw 'O site nao responde corretamente.' } }
     'stop'    { Stop-Site }
-    'restart' { Stop-Site; Start-Site; if (-not (Test-SiteHealth)) { throw 'El sitio no responde correctamente.' } }
+    'restart' { Stop-Site; Start-Site; if (-not (Test-SiteHealth)) { throw 'O site nao responde corretamente.' } }
     'purge'   {
         Stop-Site
         Remove-Site
@@ -29,6 +29,6 @@ switch ($Action) {
             }
         }
         Remove-Item $Paths.Env -Recurse -Force
-        Write-Ok "Eliminado $($Paths.Env)"
+        Write-Ok "Removido $($Paths.Env)"
     }
 }

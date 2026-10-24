@@ -96,7 +96,7 @@ public sealed class CiStore(string root)
             return fresh;
         }
         return JsonSerializer.Deserialize<CiConfig>(File.ReadAllText(FilePath), Json)
-            ?? throw new InvalidOperationException($"{FilePath} esta vacio.");
+            ?? throw new InvalidOperationException($"{FilePath} esta vazio.");
     }
 
     /// <summary>Legacy (pre-IIS) site folder, kept only as the fallback when there is no release.</summary>

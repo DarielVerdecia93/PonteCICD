@@ -14,11 +14,11 @@ try {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $hasModule = [bool](Get-Module -ListAvailable WebAdministration)
     if (-not $hasModule) {
-        throw 'IIS no instalado: active el rol IIS (Web-Server, Web-Mgmt-Console, Web-Scripting-Tools) y reinicie.'
+        throw 'IIS nao instalado: ative o papel IIS (Web-Server, Web-Mgmt-Console, Web-Scripting-Tools) e reinicie.'
     } elseif (-not $isAdmin) {
-        throw 'LegadosCI no se ejecuta como administrador: la gestion de IIS requiere elevacion. Instale/arranque el servicio con una cuenta del grupo Administradores (vea install-service.ps1) o ejecute el panel como administrador.'
+        throw 'LegadosCI nao e executado como administrador: a gestao do IIS requer elevacao. Instale/inicie o servico com uma conta do grupo Administradores (consulte install-service.ps1) ou execute o painel como administrador.'
     } else {
-        throw "No se pudo acceder a la configuracion de IIS: $($_.Exception.Message)"
+        throw "Nao foi possivel aceder a configuracao do IIS: $($_.Exception.Message)"
     }
 }
 
@@ -58,7 +58,7 @@ function Get-KeepReleases {
 # Loads an environment from ci.json and defines $EnvCfg, $Paths, nombres IIS, $SiteUrl y $HealthUrl en scope del script.
 function Use-Environment([string]$Name) {
     $e = @($Cfg.environments | Where-Object { $_.name -eq $Name })
-    if (-not $e.Count) { throw "No existe el entorno '$Name' en ci.json." }
+    if (-not $e.Count) { throw "Nao existe o ambiente '$Name' em ci.json." }
     $script:EnvCfg = $e[0]
 
     # Lectura defensiva de campos nuevos (StrictMode, pueden faltar en ci.json antiguo).
@@ -96,7 +96,7 @@ function Enter-DeployLock {
             $script:LockStream = [System.IO.File]::Open($LockFile, 'OpenOrCreate', 'ReadWrite', 'None')
             return
         } catch {
-            if ((Get-Date) -gt $deadline) { throw 'Timeout esperando a otra operacion de deploy/rollback.' }
+            if ((Get-Date) -gt $deadline) { throw 'Tempo esgotado a aguardar outra operacao de deploy/rollback.' }
             Start-Sleep -Seconds 5
         }
     }
@@ -132,16 +132,16 @@ function Update-Mirror {
         & git --git-dir $Mirror remote set-url origin $repoUrl 2>&1 | Out-Null
         & git --git-dir $Mirror fetch --prune --quiet origin '+refs/heads/*:refs/heads/*' 2>&1 | ForEach-Object { "$_" } | Out-Host
     }
-    if ($LASTEXITCODE) { throw 'No se pudo actualizar el mirror git (credenciales o red).' }
+    if ($LASTEXITCODE) { throw 'Nao foi possivel atualizar o mirror git (credenciais ou rede).' }
     if ($Cfg.PSObject.Properties['localRepoPath'] -and $Cfg.localRepoPath) {
         & git --git-dir $Mirror fetch --prune --quiet $Cfg.localRepoPath '+refs/heads/*:refs/local/*' 2>&1 | ForEach-Object { "$_" } | Out-Host
-        if ($LASTEXITCODE) { throw "No se pudieron leer las ramas del repo local $($Cfg.localRepoPath)." }
+        if ($LASTEXITCODE) { throw "Nao foi possivel ler os branches do repo local $($Cfg.localRepoPath)." }
     }
 }
 
 function Resolve-Commit([string]$Ref) {
     $commit = & git -C $Mirror rev-parse --verify --quiet "$Ref^{commit}"
-    if ($LASTEXITCODE -or -not $commit) { throw "No existe la referencia '$Ref'." }
+    if ($LASTEXITCODE -or -not $commit) { throw "Nao existe a referencia '$Ref'." }
     return "$commit".Trim()
 }
 
@@ -150,7 +150,7 @@ function Resolve-Commit([string]$Ref) {
 function Get-MSBuildPath {
     if ($Cfg.msbuild) { return $Cfg.msbuild }
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path $vswhere)) { throw 'No se encuentra vswhere.exe; define "msbuild" en ci.json.' }
+    if (-not (Test-Path $vswhere)) { throw 'Nao foi encontrado o vswhere.exe; defina "msbuild" em ci.json.' }
     # La instancia elegida debe tener los targets de aplicaciones web (no todas las BuildTools los traen).
     $instances = & $vswhere -all -products * -requires Microsoft.Component.MSBuild -sort -property installationPath
     foreach ($inst in $instances) {
@@ -158,14 +158,14 @@ function Get-MSBuildPath {
         $web = Get-ChildItem (Join-Path $inst 'MSBuild\Microsoft\VisualStudio') -Filter 'Microsoft.WebApplication.targets' -Recurse -ErrorAction SilentlyContinue
         if ((Test-Path $exe) -and $web) { return $exe }
     }
-    throw 'No hay ninguna instalacion de Visual Studio/BuildTools con los targets de aplicaciones web (carga "ASP.NET y desarrollo web").'
+    throw 'Nao existe nenhuma instalacao de Visual Studio/BuildTools com os targets de aplicacoes web (carga "ASP.NET e desenvolvimento web").'
 }
 
 function Get-TransformTasksDll([string]$MSBuild) {
     $msbuildRoot = (Resolve-Path (Join-Path (Split-Path $MSBuild) '..\..')).Path
     $dll = Get-ChildItem (Join-Path $msbuildRoot 'Microsoft\VisualStudio') -Recurse -Filter 'Microsoft.Web.Publishing.Tasks.dll' -ErrorAction SilentlyContinue |
         Sort-Object FullName -Descending | Select-Object -First 1
-    if (-not $dll) { throw "No se encuentra Microsoft.Web.Publishing.Tasks.dll bajo $msbuildRoot." }
+    if (-not $dll) { throw "Nao foi encontrado Microsoft.Web.Publishing.Tasks.dll em $msbuildRoot." }
     return $dll.FullName
 }
 
@@ -174,7 +174,7 @@ function Invoke-Robocopy([string]$Source, [string]$Destination, [string[]]$Exclu
     $excluded = @($Exclude | ForEach-Object { Join-Path $Destination $_ })
     if ($excluded.Count) { $rcArgs += '/XD'; $rcArgs += $excluded }
     & robocopy @rcArgs | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy fallo (codigo $LASTEXITCODE) copiando $Source -> $Destination" }
+    if ($LASTEXITCODE -ge 8) { throw "robocopy falhou (codigo $LASTEXITCODE) a copiar $Source -> $Destination" }
     $global:LASTEXITCODE = 0
 }
 
@@ -194,7 +194,7 @@ function Clear-Directory([string]$Path, [string[]]$Keep = @()) {
         } else {
             Remove-Item -LiteralPath $item.FullName -Force
         }
-        if (Test-Path -LiteralPath $item.FullName) { throw "No se pudo borrar $($item.FullName). Algun proceso lo tiene abierto?" }
+        if (Test-Path -LiteralPath $item.FullName) { throw "Nao foi possivel apagar $($item.FullName). Algum processo tem-no aberto?" }
     }
 }
 
@@ -233,7 +233,7 @@ function Add-PreserveJunctions([string]$Release) {
         $parent = Split-Path $link -Parent
         if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
         & cmd /c mklink /J "$link" "$sharedDir" 2>&1 | Out-Null
-        if ($LASTEXITCODE -or -not (Test-Path $link)) { throw "No se pudo enlazar $entry." }
+        if ($LASTEXITCODE -or -not (Test-Path $link)) { throw "Nao foi possivel ligar $entry." }
     }
 }
 
@@ -342,7 +342,7 @@ function Ensure-Site {
                 -Value @{ initializationPage = $script:HealthPath }
         }
     } catch {
-        Write-Warn "Application Initialization no disponible: puede haber una pausa breve en el primer acceso. ($($_.Exception.Message))"
+        Write-Warn "Application Initialization nao disponivel: pode haver uma pausa breve no primeiro acesso. ($($_.Exception.Message))"
     }
 }
 
@@ -354,40 +354,40 @@ function New-Release([string]$Stage, [hashtable]$Info) {
     Invoke-Robocopy $Stage $release
     Add-PreserveJunctions $release
     ([pscustomobject]$Info | ConvertTo-Json) | Set-Content (Join-Path $release 'deploy-info.json') -Encoding UTF8
-    Write-Ok "Release creada: $id"
+    Write-Ok "Release criada: $id"
     return $id
 }
 
 # Reapunta el sitio a releases\<id>, escribe current.txt (ASCII, sin BOM, sin salto final) y recicla el pool (solapado).
 function Switch-Release([string]$ReleaseId) {
     $path = Join-Path $Paths.Releases $ReleaseId
-    if (-not (Test-Path (Join-Path $path 'Web.config'))) { throw "La release $ReleaseId no es valida (falta Web.config)." }
+    if (-not (Test-Path (Join-Path $path 'Web.config'))) { throw "A release $ReleaseId nao e valida (falta Web.config)." }
     Set-ItemProperty "IIS:\Sites\$script:SiteName" -Name physicalPath -Value $path
     [IO.File]::WriteAllText($Paths.Current, $ReleaseId, [Text.Encoding]::ASCII)
     Restart-WebAppPool $script:PoolName   # recycle solapado (disallowOverlappingRotation=false, default)
-    Write-Ok "Release activa: $ReleaseId"
+    Write-Ok "Release ativa: $ReleaseId"
 }
 
 # Nudge redundante tras el swap: fuerza/confirma la compilacion de la release nueva (HTTP < 500).
 # El gate real es Test-SiteHealth tras el calentamiento de Application Initialization.
 function Invoke-WarmRelease {
     $deadline = (Get-Date).AddSeconds($Cfg.healthTimeoutSec)
-    Write-Ok "Calentando $HealthUrl (hasta $($Cfg.healthTimeoutSec)s)..."
+    Write-Ok "A aquecer $HealthUrl (ate $($Cfg.healthTimeoutSec)s)..."
     while ((Get-Date) -lt $deadline) {
         try {
             $r = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 120
-            Write-Ok "Calentamiento: HTTP $($r.StatusCode)."
+            Write-Ok "Aquecimento: HTTP $($r.StatusCode)."
             return $true
         } catch {
             $resp = $_.Exception.Response
             if ($resp -and [int]$resp.StatusCode -lt 500) {
-                Write-Ok "Calentamiento: HTTP $([int]$resp.StatusCode)."
+                Write-Ok "Aquecimento: HTTP $([int]$resp.StatusCode)."
                 return $true
             }
             Start-Sleep -Seconds 3
         }
     }
-    Write-Warn 'La release nueva no respondio al calentamiento.'
+    Write-Warn 'A nova release nao respondeu ao aquecimento.'
     return $false
 }
 
@@ -395,14 +395,14 @@ function Start-Site {
     Ensure-Site
     if ((Get-WebAppPoolState $script:PoolName).Value -ne 'Started') { Start-WebAppPool $script:PoolName }
     if ((Get-WebsiteState   $script:SiteName).Value -ne 'Started') { Start-Website   $script:SiteName }
-    Write-Ok "Sitio IIS '$script:SiteName' iniciado en $SiteUrl"
+    Write-Ok "Site IIS '$script:SiteName' iniciado em $SiteUrl"
 }
 
 function Stop-Site {
-    if (-not (Test-Path "IIS:\Sites\$script:SiteName")) { Write-Ok 'El sitio IIS no existe.'; return }
+    if (-not (Test-Path "IIS:\Sites\$script:SiteName")) { Write-Ok 'O site IIS nao existe.'; return }
     if ((Get-WebsiteState    $script:SiteName).Value -eq 'Started') { Stop-Website    $script:SiteName }
     if ((Get-WebAppPoolState $script:PoolName).Value -eq 'Started') { Stop-WebAppPool $script:PoolName }
-    Write-Ok "Sitio IIS '$script:SiteName' detenido."
+    Write-Ok "Site IIS '$script:SiteName' parado."
 }
 
 # Elimina sitio + pool de IIS, solo cuando los nombres son de LegadosCI (nunca sitios externos).
@@ -411,38 +411,38 @@ function Remove-Site {
     if ($script:SiteName -like 'LegadosCI-*') {
         if (Test-Path "IIS:\Sites\$script:SiteName") { Remove-Website -Name $script:SiteName }
     } else {
-        Write-Warn "El sitio '$script:SiteName' no lo creo LegadosCI; no se elimina de IIS."
+        Write-Warn "O site '$script:SiteName' nao foi criado pelo LegadosCI; nao e removido do IIS."
     }
     if ($script:PoolName -like 'LegadosCI-*') {
         if (Test-Path "IIS:\AppPools\$script:PoolName") { Remove-WebAppPool -Name $script:PoolName }
     } else {
-        Write-Warn "El app pool '$script:PoolName' no lo creo LegadosCI; no se elimina de IIS."
+        Write-Warn "O app pool '$script:PoolName' nao foi criado pelo LegadosCI; nao e removido do IIS."
     }
 }
 
 # Comprobacion de salud en 3 partes: (a) pool Started (b) sitio Started (c) HTTP < 500 con reintentos.
 function Test-SiteHealth {
-    if ((Get-WebAppPoolState $script:PoolName).Value -ne 'Started') { Write-Warn 'App pool no esta Started.'; return $false }
-    if ((Get-WebsiteState    $script:SiteName).Value -ne 'Started') { Write-Warn 'El sitio no esta Started.'; return $false }
+    if ((Get-WebAppPoolState $script:PoolName).Value -ne 'Started') { Write-Warn 'O app pool nao esta Started.'; return $false }
+    if ((Get-WebsiteState    $script:SiteName).Value -ne 'Started') { Write-Warn 'O site nao esta Started.'; return $false }
     $deadline = (Get-Date).AddSeconds($Cfg.healthTimeoutSec)
-    Write-Ok "Comprobando $HealthUrl (hasta $($Cfg.healthTimeoutSec)s; la primera peticion compila la app)..."
+    Write-Ok "A verificar $HealthUrl (ate $($Cfg.healthTimeoutSec)s; o primeiro pedido compila a app)..."
     $lastError = $null
     while ((Get-Date) -lt $deadline) {
         try {
             $r = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 120
-            Write-Ok "Respuesta HTTP $($r.StatusCode)."
+            Write-Ok "Resposta HTTP $($r.StatusCode)."
             return $true
         } catch {
             $resp = $_.Exception.Response
             if ($resp -and [int]$resp.StatusCode -lt 500) {
-                Write-Ok "Respuesta HTTP $([int]$resp.StatusCode)."
+                Write-Ok "Resposta HTTP $([int]$resp.StatusCode)."
                 return $true
             }
             $lastError = if ($resp) { "HTTP $([int]$resp.StatusCode)" } else { $_.Exception.Message }
             Start-Sleep -Seconds 3
         }
     }
-    Write-Warn "El sitio no responde correctamente: $lastError"
+    Write-Warn "O site nao responde corretamente: $lastError"
     return $false
 }
 
@@ -474,7 +474,7 @@ function Remove-OldReleases {
     foreach ($r in $all) {
         if (-not $protected.Contains($r.Name)) {
             Remove-ReleaseTree $r.FullName
-            Write-Ok "Release antigua eliminada: $($r.Name)"
+            Write-Ok "Release antiga removida: $($r.Name)"
         }
     }
 }
@@ -503,14 +503,14 @@ function Get-Backups {
 # Devuelve la ruta del zip, o $null si no hay release activa / esta vacia.
 function New-SiteBackup([string]$Reason) {
     $source = Get-ActiveReleasePath
-    if ((Split-Path $source -Leaf) -eq '_bootstrap') { Write-Ok 'No hay release activa: no hay nada que respaldar.'; return $null }
+    if ((Split-Path $source -Leaf) -eq '_bootstrap') { Write-Ok 'Nao ha release ativa: nao ha nada para salvaguardar.'; return $null }
 
     # -Attributes !ReparsePoint impide descender por el junction de Preserve; el filtro de prefijo es 2a defensa.
     $files = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force -Attributes !ReparsePoint | Where-Object {
             $rel = $_.FullName.Substring($source.Length + 1)
             -not (@($Cfg.preserve) | Where-Object { $_ -and $rel -like "$_\*" })
         })
-    if (-not $files.Count) { Write-Ok 'La release esta vacia: no hay nada que respaldar.'; return $null }
+    if (-not $files.Count) { Write-Ok 'A release esta vazia: nao ha nada para salvaguardar.'; return $null }
 
     $info = Get-DeployInfo
     $commit = if ($info) { $info.ShortCommit } else { 'unknown' }
@@ -529,7 +529,7 @@ function New-SiteBackup([string]$Reason) {
     } finally {
         if ($zip) { $zip.Dispose() }
     }
-    Write-Ok ("Backup creado: {0} ({1} ficheros, {2} MB)" -f (Split-Path $zipPath -Leaf), $files.Count, [math]::Round((Get-Item $zipPath).Length / 1MB, 1))
+    Write-Ok ("Backup criado: {0} ({1} ficheiros, {2} MB)" -f (Split-Path $zipPath -Leaf), $files.Count, [math]::Round((Get-Item $zipPath).Length / 1MB, 1))
     return $zipPath
 }
 
@@ -552,5 +552,5 @@ function Restore-SiteBackup([string]$ZipPath) {
 
 function Remove-OldBackups {
     $old = @(Get-Backups | Select-Object -Skip $Cfg.keepBackups)
-    foreach ($b in $old) { Remove-Item $b.Path -Force; Write-Ok "Backup antiguo eliminado: $($b.Name)" }
+    foreach ($b in $old) { Remove-Item $b.Path -Force; Write-Ok "Backup antigo removido: $($b.Name)" }
 }

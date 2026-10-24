@@ -58,7 +58,7 @@ public sealed class JobQueue
             {
                 job.Status = JobStatus.Failed;
                 job.Step = null;
-                job.Summary = "Interrumpido: el servicio se detuvo.";
+                job.Summary = "Interrompido: o servico foi parado.";
                 Save(job);
             }
             _jobs[job.Id] = job;
@@ -128,7 +128,7 @@ public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILog
                 job.Status = JobStatus.Failed;
                 job.Summary = ex.Message;
                 await output.WriteLineAsync("ERROR: " + ex);
-                log.LogError(ex, "Job {Id} fallo", job.Id);
+                log.LogError(ex, "Job {Id} falhou", job.Id);
             }
             job.Step = null;
             job.FinishedAt = DateTimeOffset.Now;
@@ -215,15 +215,15 @@ public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILog
     async Task ResolveDeployTargetAsync(Job job, StreamWriter output, CancellationToken ct)
     {
         var env = store.Load().Environments.FirstOrDefault(e => e.Name == job.Env)
-                  ?? throw new InvalidOperationException($"El entorno {job.Env} ya no existe.");
+                  ?? throw new InvalidOperationException($"O ambiente {job.Env} ja nao existe.");
         job.Branch = env.Branch;
         if (job.Arg is null)
         {
-            await output.WriteLineAsync($"==> Buscando el ultimo commit de {env.Branch} ({env.Source})");
+            await output.WriteLineAsync($"==> A procurar o ultimo commit de {env.Branch} ({env.Source})");
             if (env.Source == BranchSource.Local) await mirror.SyncLocalAsync(ct);
             else await mirror.SyncRemoteAsync(force: false, ct);
             var head = mirror.Find(env.Branch, env.Source)
-                       ?? throw new InvalidOperationException($"La rama {env.Branch} ({env.Source}) ya no existe.");
+                       ?? throw new InvalidOperationException($"O branch {env.Branch} ({env.Source}) ja nao existe.");
             job.Commit = head.Commit;
             job.Subject = head.Subject;
         }
@@ -239,6 +239,6 @@ public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILog
         if (status == JobStatus.Succeeded)
             return lines.LastOrDefault(l => l.StartsWith("==>"))?[3..].Trim() ?? "OK";
         // The engine scripts report fatal errors as "ERROR: <message>" (see their trap).
-        return lines.LastOrDefault(l => l.StartsWith("ERROR: "))?[7..] ?? lines.LastOrDefault() ?? "Fallo (ver log)";
+        return lines.LastOrDefault(l => l.StartsWith("ERROR: "))?[7..] ?? lines.LastOrDefault() ?? "Falhou (ver log)";
     }
 }
