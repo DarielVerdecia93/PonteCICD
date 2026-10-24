@@ -25,6 +25,16 @@ try {
 $Root = Split-Path $PSScriptRoot -Parent
 $Cfg = Get-Content (Join-Path $Root 'ci.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# El servicio suele correr como LocalSystem, pero los repos (mirror.git, work\src) los pudo crear otro
+# usuario; git entonces rechaza operar por "dubious ownership". En lugar de obligar al operador a correr
+# 'git config --add safe.directory' a mano, la herramienta se autoconfigura una vez: marca todo como
+# seguro en el git global de ESTA cuenta (idempotente; git ignora duplicados). Es un host de CI de un
+# solo operador, asi que el comodin es aceptable y evita tener que marcar cada proyecto nuevo.
+$null = & git config --global --get-all safe.directory 2>$null
+if ($LASTEXITCODE -ne 0 -or (& git config --global --get-all safe.directory 2>$null) -notcontains '*') {
+    & git config --global --add safe.directory '*' 2>$null | Out-Null
+}
+
 $Mirror = Join-Path $Root 'mirror.git'
 # work\ guarda el codigo fuente y la compilacion. El proyecto web genera rutas muy largas (obj\...\AspnetCompileMerge\...)
 # y MSBuild/aspnet_compiler fallan pasados 260 caracteres: workDir en ci.json permite usar una ruta corta.
