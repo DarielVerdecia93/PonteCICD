@@ -31,9 +31,22 @@ Painel: **http://localhost:5080**
 - Guardam-se os últimos `keepBackups` zips por ambiente. `UploadFiles` (dados de utilizadores) não é tocado nem entra nos zips.
 - Os jobs executam-se um de cada vez; cada execução fica em `runs\` (json + log), visível no painel.
 
+## Acesso ao painel (login)
+
+O painel exige início de sessão. Na primeira execução cria-se o utilizador **`admin`** com a palavra-passe **`p4sw00rdAdm1n`**.
+
+- **Altere-a logo:** menu do utilizador (canto superior direito) → **Alterar palavra-passe**. Enquanto for a predefinida, o painel mostra um aviso.
+- Menu do utilizador: *Projeto e acesso ao repositório*, *Frequência de atualização*, *Alterar palavra-passe* e *Terminar sessão*.
+- A sessão dura 12 h sem atividade. Ao mudar a palavra-passe, as outras sessões abertas terminam.
+- Após 5 tentativas falhadas, o utilizador fica bloqueado 1 minuto.
+- As palavras-passe nunca são guardadas: só um hash PBKDF2 em `secrets\users.json`. Se se esquecer da palavra-passe,
+  pare o serviço, apague `secrets\users.json` e arranque-o: volta o `admin` / `p4sw00rdAdm1n`.
+- Por omissão o painel só aceita ligações locais (`listenUrl` = `http://localhost:5080`). Se o expuser na rede, use HTTPS
+  (proxy inverso) e mude a palavra-passe predefinida.
+
 ## Primeira configuração: projeto e autenticação
 
-Num PC novo, abra o painel e carregue em **Projeto e acesso** (ou no aviso «Configurar projeto e acesso»):
+Num PC novo, abra o painel, inicie sessão e abra o menu do utilizador → **Projeto e acesso ao repositório** (ou use o aviso «Configurar projeto e acesso»):
 
 1. **URL do repositório** (HTTPS), de **Azure DevOps** (`https://dev.azure.com/org/projeto/_git/repo`) ou de **GitHub** (`https://github.com/org/repo.git`).
 2. **Token de acesso (PAT)**:
