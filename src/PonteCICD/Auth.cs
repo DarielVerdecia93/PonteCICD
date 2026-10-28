@@ -191,9 +191,27 @@ public sealed class LoginThrottle
 public record LoginRequest(string? Username, string? Password);
 public record ChangePasswordRequest(string? Current, string? New);
 
+/// <summary>
+/// The Blazor panel keeps a SignalR connection open, so the cookie check (OnValidatePrincipal) does not run again while
+/// the page is open. This re-checks the session every minute: a password change elsewhere also ends it here.
+/// </summary>
+public sealed class PanelAuthStateProvider(ILoggerFactory loggerFactory, UserStore users)
+    : Microsoft.AspNetCore.Components.Server.RevalidatingServerAuthenticationStateProvider(loggerFactory)
+{
+    protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(1);
+
+    protected override Task<bool> ValidateAuthenticationStateAsync(
+        Microsoft.AspNetCore.Components.Authorization.AuthenticationState state, CancellationToken ct)
+    {
+        var name = state.User.Identity?.Name;
+        var stamp = state.User.FindFirstValue(AuthEndpoints.StampClaim);
+        return Task.FromResult(name is not null && stamp is not null && users.StampOf(name) == stamp);
+    }
+}
+
 public static class AuthEndpoints
 {
-    const string StampClaim = "stamp";
+    internal const string StampClaim = "stamp";
 
     public static void AddPanelAuth(this IServiceCollection services)
     {
@@ -206,8 +224,14 @@ public static class AuthEndpoints
                 o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 o.ExpireTimeSpan = TimeSpan.FromHours(12);
                 o.SlidingExpiration = true;
-                // API: respond 401/403 instead of redirecting to a login page.
-                o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
+                // API: respond 401/403 instead of redirecting to a login page. Pages (/v2): the classic panel's login,
+                // which comes back here afterwards (?voltar=).
+                o.Events.OnRedirectToLogin = ctx =>
+                {
+                    if (ctx.Request.Path.StartsWithSegments("/api")) ctx.Response.StatusCode = 401;
+                    else ctx.Response.Redirect("/?voltar=" + Uri.EscapeDataString(ctx.Request.Path + ctx.Request.QueryString));
+                    return Task.CompletedTask;
+                };
                 o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
                 // A password change invalidates every other session.
                 o.Events.OnValidatePrincipal = async ctx =>

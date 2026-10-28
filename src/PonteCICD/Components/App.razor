@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    <link rel="stylesheet" href="@Assets["v2/painel.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="Interativo" />
+</head>
+<body>
+    <Routes @rendermode="Interativo" />
+    @* Ligacao ao servico perdida (ex.: servico reiniciado na atualizacao). O Blazor poe as classes components-reconnect-*. *@
+    <div id="components-reconnect-modal" class="reconexao" role="alert">
+        <div class="reconexao-caixa">
+            <p class="a-ligar">A ligar novamente ao serviço…</p>
+            <p class="sem-ligacao">Sem ligação ao serviço. <a href="" onclick="location.reload(); return false;">Recarregar a página</a></p>
+        </div>
+    </div>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+    <script src="@Assets["v2/painel.js"]"></script>
+</body>
+</html>
+
+@code {
+    // Sem pre-renderizacao: a pagina so carrega os dados depois de ligada (nao ha duas cargas por visita).
+    static readonly IComponentRenderMode Interativo = new InteractiveServerRenderMode(prerender: false);
+}

@@ -262,6 +262,8 @@
       <button role="menuitem" id="rulesBtn">Regras de publicação</button>
       <button role="menuitem" id="settingsBtn">Frequência de atualização</button>
       <hr>
+      <button role="menuitem" id="v2Btn">Novo painel (pré-visualização)</button>
+      <hr>
       <button role="menuitem" id="passwordBtn">Alterar palavra-passe</button>
       <button role="menuitem" id="logoutBtn" class="danger">Terminar sessão</button>
     </div>
@@ -1026,6 +1028,7 @@ $('#loginForm').addEventListener('submit', async ev => {
     if (loginSetup && f.password.value !== f.again.value) throw new Error('As palavras-passe não coincidem.');
     applyMe(await api('POST', loginSetup ? '/api/auth/setup' : '/api/auth/login', { username: f.username.value, password: f.password.value }));
     f.password.value = ''; f.again.value = '';
+    if (goBack()) return;
     $('#login').close();
     refresh();
     connect();
@@ -1045,6 +1048,16 @@ document.addEventListener('click', ev => {
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape') userMenu.classList.remove('open'); });
 // Qualquer opção do menu fecha-o.
 userMenu.querySelector('.menu').addEventListener('click', ev => { if (ev.target.closest('button')) userMenu.classList.remove('open'); });
+
+// O painel novo (/v2) manda para aqui sem sessão (?voltar=/v2): depois do login volta para lá.
+// Só caminhos deste site: «//outro» ou «/\outro» levariam a outro servidor.
+function goBack() {
+  const to = new URLSearchParams(location.search).get('voltar');
+  if (!to || !/^\/(?![/\\])/.test(to)) return false;
+  location.href = to;
+  return true;
+}
+$('#v2Btn').onclick = () => { location.href = '/v2'; };
 
 $('#logoutBtn').onclick = async () => {
   try { await api('POST', '/api/auth/logout'); } catch { /* já sem sessão */ }

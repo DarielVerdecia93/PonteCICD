@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using MudBlazor.Services;
 using PonteCICD;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -9,6 +11,9 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 builder.Host.UseWindowsService(o => o.ServiceName = "PonteCICD");
+// Sem publicar (dotnet run / build), os ficheiros do Blazor e do MudBlazor estao na cache do NuGet e so se servem em
+// Development; isto serve-os em qualquer ambiente. No publicado ja estao em wwwroot e nao faz nada.
+builder.WebHost.UseStaticWebAssets();
 
 // Por defecto la raiz del CI es la carpeta del repo Legados-CI (la que contiene engine\deploy.ps1 y ci.json).
 // Se busca subiendo desde el exe, asi funciona igual con dotnet run (bin\Debug\...) y con el publicado (service\).
@@ -63,12 +68,25 @@ builder.Services.AddSingleton<IisStateProbe>();
 builder.Services.AddSingleton<Poller>();
 builder.Services.AddHostedService<JobRunner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Poller>());
+builder.Services.AddSingleton<PanelService>();
+// Painel Blazor (pre-visualizacao em /v2): componentes interativos no servidor (SignalR), com MudBlazor.
+// A sessao e a mesma cookie do painel classico; o PanelAuthStateProvider volta a verifica-la com a pagina aberta.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<AuthenticationStateProvider, PanelAuthStateProvider>();
+// Avisos em baixo a direita durante 7 s, como no painel classico.
+builder.Services.AddMudServices(o =>
+{
+    o.SnackbarConfiguration.PositionClass = MudBlazor.Defaults.Classes.Position.BottomRight;
+    o.SnackbarConfiguration.VisibleStateDuration = 7000;
+});
 
 var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 // Startup self-check (A-8): warn, don't crash, when not elevated or IIS is unavailable; the service
 // then runs in degraded mode (iisAvailable=false) and the panel surfaces it.
@@ -85,47 +103,7 @@ app.UseAuthorization();
 var api = app.MapGroup("/api").RequireAuthorization();
 api.MapAuth();
 
-api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisStateProbe probe, CancellationToken ct) =>
-{
-    var cfg = store.Load();
-    var envs = new List<object>();
-    foreach (var e in cfg.Environments)
-    {
-        var head = mirror.Find(e.Branch, e.Source);
-        var deployed = store.GetDeployInfo(e.Name);
-        var pending = head is not null && deployed is not null && deployed.Commit != head.Commit
-            ? await mirror.PendingAsync(deployed.Commit, head.Commit, ct)
-            : [];
-        envs.Add(new
-        {
-            e.Name, e.Branch, e.Source, e.Port, e.Configuration, e.AutoDeploy,
-            e.SitePath, e.SiteName, e.AppPoolName, e.HostHeader,
-            // Com nome DNS o acesso publico e http://<nome>/ (porto 80, sem porto visivel); LocalUrl e o do porto do ambiente.
-            Url = string.IsNullOrWhiteSpace(e.HostHeader) ? $"http://localhost:{e.Port}/" : $"http://{e.HostHeader}/",
-            LocalUrl = $"http://localhost:{e.Port}/",
-            Running = probe.Running(e.Name),
-            Deployed = deployed,
-            Head = head,
-            Pending = pending,
-            AutoDeployAt = poller.AutoDeployAt(e.Name),
-            Job = queue.Pending(e.Name),
-            Backups = store.GetBackups(e.Name),
-        });
-    }
-    return new
-    {
-        mirror.LastCheck,
-        mirror.LastChange,
-        LastError = mirror.LastError is null ? null : GitAuth.Friendly(mirror.LastError),
-        cfg.PollIntervalSec,
-        cfg.QuietSec,
-        cfg.LocalRepoPath,
-        IisAvailable = probe.IisAvailable,
-        IisError = probe.Error,
-        ProjectConfigured = GitAuth.HasCredentials(cfg),
-        Environments = envs,
-    };
-});
+api.MapGet("/state", (PanelService panel, CancellationToken ct) => panel.GetStateAsync(ct));
 
 api.MapPut("/settings", (SettingsRequest req, Notifier notifier) =>
 {
@@ -404,33 +382,25 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
     return error is null ? Results.Ok(env) : Results.BadRequest(error);
 });
 
-api.MapDelete("/envs/{name}", (string name, JobQueue queue) =>
-    EnvExists(name) ? Results.Ok(queue.Enqueue(name, JobKind.Purge, "manual")) : Results.NotFound());
+api.MapDelete("/envs/{name}", (string name, PanelService panel) => ToHttp(panel.Enqueue(name, JobKind.Purge)));
 
 // arg: commit to deploy (default: branch tip) or backup to restore (default: latest).
-api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, JobQueue queue, Mirror mirror) =>
+api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, PanelService panel) =>
 {
     if (!EnvExists(name)) return Results.NotFound();
     if (!Enum.TryParse<JobKind>(action, ignoreCase: true, out var kind) || kind == JobKind.Purge)
         return Results.BadRequest($"Acao desconhecida: {action}");
-    // Implantar precisa de ler o repositorio: sem URL e token nao ha acesso (parar, iniciar e rollback nao precisam).
-    if (kind == JobKind.Deploy && !mirror.HasAccess)
-        return Results.Conflict("Acesso ao repositorio nao configurado: indique o URL e o token em «Acesso ao repositorio» antes de implantar.");
-    if (queue.HasPending(name)) return Results.Conflict($"Já existe uma operação em curso para {name}.");
-    return Results.Ok(queue.Enqueue(name, kind, "manual", arg));
+    return ToHttp(panel.Enqueue(name, kind, arg));
 });
 
 api.MapGet("/jobs", (string? env, JobQueue queue) => queue.Recent(env));
 
 api.MapGet("/jobs/{id}/log", (string id, JobQueue queue) =>
-{
-    if (queue.Get(id) is null) return Results.NotFound();
-    var path = queue.LogPath(id);
-    if (!File.Exists(path)) return Results.Text("");
-    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-    using var reader = new StreamReader(fs);
-    return Results.Text(reader.ReadToEnd());
-});
+    queue.Get(id) is null ? Results.NotFound() : Results.Text(queue.ReadLog(id)));
+
+// Painel Blazor (pre-visualizacao em /v2). As paginas exigem sessao: sem ela vao para o login do painel classico.
+app.MapStaticAssets();
+app.MapRazorComponents<PonteCICD.Components.App>().AddInteractiveServerRenderMode();
 
 try
 {
@@ -448,6 +418,9 @@ catch (Exception ex) when (ex is System.Net.Sockets.SocketException or Microsoft
 }
 
 bool EnvExists(string name) => store.Load().Environments.Any(e => e.Name == name);
+
+static IResult ToHttp(EnqueueResult r) =>
+    r.NotFound ? Results.NotFound() : r.Conflict is not null ? Results.Conflict(r.Conflict) : Results.Ok(r.Job);
 
 static bool IsLoopbackUrl(string url) =>
     Uri.TryCreate(url.Replace("+", "wildcard").Replace("*", "wildcard"), UriKind.Absolute, out var uri)

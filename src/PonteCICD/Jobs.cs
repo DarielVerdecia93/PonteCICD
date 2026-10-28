@@ -103,6 +103,16 @@ public sealed class JobQueue
     }
 
     public string LogPath(string id) => Path.Combine(_store.RunsDir, id + ".log");
+
+    /// <summary>The job's output so far ("" before it starts); readable while the job is still writing it.</summary>
+    public string ReadLog(string id)
+    {
+        var path = LogPath(id);
+        if (!File.Exists(path)) return "";
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(fs);
+        return reader.ReadToEnd();
+    }
 }
 
 public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILogger<JobRunner> log) : BackgroundService

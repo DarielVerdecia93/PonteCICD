@@ -1,0 +1,56 @@
+/* Painel Blazor (/v2): o que o MudBlazor nao traz, com as cores do tema (variaveis --mud-palette-*). */
+:root { --mono: "Cascadia Code", ui-monospace, Consolas, monospace; }
+code, .mono { font-family: var(--mono); font-size: 12px; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 6px; border-radius: 5px; }
+.sec { color: var(--mud-palette-text-secondary); }
+.nowrap { white-space: nowrap; }
+
+.barra { backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px); border-bottom: 1px solid var(--mud-palette-lines-default); }
+.marca { font-weight: 600; letter-spacing: -.01em; }
+.ao-vivo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mud-palette-text-secondary); }
+.ao-vivo i { width: 8px; height: 8px; border-radius: 50%; background: var(--mud-palette-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mud-palette-success) 22%, transparent); }
+.verificado { align-items: center; gap: 4px; margin-right: 12px; font-size: 12px; color: var(--mud-palette-text-secondary); cursor: default; }
+.verificado.erro { color: var(--mud-palette-error); }
+
+.secao { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+
+.ambiente { transition: border-color .2s, box-shadow .2s; }
+.ambiente:hover { box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+.ambiente.ocupado { border-color: color-mix(in srgb, var(--mud-palette-primary) 55%, var(--mud-palette-lines-default)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--mud-palette-primary) 35%, transparent); }
+.ambiente-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.ambiente-titulo { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; flex: 1; min-width: 0; }
+.ambiente-titulo .nome { font-weight: 600; margin-right: 4px; }
+.ambiente-titulo .mud-chip { margin: 0; }
+.ambiente-acoes { display: flex; align-items: center; gap: 4px; }
+.ponto { width: 9px; height: 9px; border-radius: 50%; background: var(--mud-palette-text-disabled); flex: none; }
+.ponto.on { background: var(--mud-palette-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mud-palette-success) 20%, transparent); }
+
+.linhas { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; margin-top: 12px; align-items: center; }
+.linhas > span:nth-child(odd) { color: var(--mud-palette-text-secondary); }
+.interruptor { margin: -8px 0; }
+.interruptor .mud-typography { font-size: 13px; }
+.pendentes { margin: 4px 0 0; padding-left: 20px; font-size: 13px; }
+.pendentes li { margin: 2px 0; }
+
+.estado { margin-top: 12px; padding: 9px 12px; border-radius: 8px; font-size: 13px; display: flex; gap: 10px; align-items: center; }
+.estado.em-curso { color: var(--mud-palette-primary); background: color-mix(in srgb, var(--mud-palette-primary) 10%, transparent); }
+.estado.espera { color: var(--mud-palette-warning); background: color-mix(in srgb, var(--mud-palette-warning) 12%, transparent); }
+.estado .rodinha { width: 16px !important; height: 16px !important; flex: none; }
+
+.linha-job { cursor: pointer; }
+pre.log { margin: 0 16px 16px; height: calc(100vh - 96px); overflow: auto; background: #0c0c0c; color: #e6e6e6; padding: 14px; border-radius: 8px; font: 12px/1.5 var(--mono); white-space: pre-wrap; }
+
+/* Reconexao (classes que o Blazor poe em #components-reconnect-modal). */
+/* O MudBlazor pinta este elemento com o fundo do tema (!important) e tapa a pagina: aqui o painel fica visivel, escurecido. */
+#components-reconnect-modal.reconexao { display: none; position: fixed; inset: 0; z-index: 3000; align-items: center; justify-content: center; background-color: rgb(0 0 0 / .35) !important; }
+#components-reconnect-modal.components-reconnect-show, #components-reconnect-modal.components-reconnect-retrying,
+#components-reconnect-modal.components-reconnect-failed, #components-reconnect-modal.components-reconnect-rejected { display: flex; }
+.reconexao p { display: none; margin: 0; }
+.components-reconnect-show .a-ligar, .components-reconnect-retrying .a-ligar { display: block; }
+.components-reconnect-failed .sem-ligacao, .components-reconnect-rejected .sem-ligacao { display: block; }
+.reconexao-caixa { background: var(--mud-palette-surface); color: var(--mud-palette-text-primary); padding: 20px 24px; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.25); font-size: 14px; }
+
+@media (max-width: 600px) {
+  .linhas { grid-template-columns: 1fr; gap: 2px; }
+  .linhas > span:nth-child(odd) { margin-top: 8px; }
+}
