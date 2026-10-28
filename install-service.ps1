@@ -171,10 +171,8 @@ if ($LocalSystem) {
     Start-Service $name
     Write-Host ''
     Write-Host "Servico $name instalado como LocalSystem e arrancado. Painel: http://localhost:5080"
-    Write-Host 'NOTA: o LocalSystem nao leva as suas credenciais de git. Se o repo for privado (Azure DevOps),'
-    Write-Host '      configure o git ao nivel do sistema com um PAT, por exemplo:'
-    Write-Host '        git config --system credential.helper store'
-    Write-Host '        (e guarde o PAT na primeira vez, ou use a URL https://<PAT>@dev.azure.com/...)'
+    Write-Host 'NOTA: o LocalSystem nao leva as suas credenciais de git. Se o repo for privado (Azure DevOps/GitHub),'
+    Write-Host '      abra o painel, carregue em "Projeto e acesso" e indique o URL do repositorio e o token (PAT).'
     return
 }
 

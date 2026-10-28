@@ -105,6 +105,9 @@ api.MapPut("/project", (ProjectRequest req, Mirror mirror, Notifier notifier) =>
     var url = (req.RepoUrl ?? "").Trim();
     if (url.Length > 0 && !Regex.IsMatch(url, @"^https?://", RegexOptions.IgnoreCase))
         return Results.BadRequest("O URL do repositorio deve comecar por https:// (ou http://).");
+    // Com token guardado no painel, o URL nao leva «utilizador:token@» (nem ${VAR}): entraria em conflito com a autenticacao.
+    if (!string.IsNullOrWhiteSpace(req.Token) || (gitAuth.HasToken && req.ClearToken != true))
+        url = Regex.Replace(url, @"^(https?://)[^/@]*@", "$1", RegexOptions.IgnoreCase);
     store.Update(c =>
     {
         c.RepoUrl = url;
