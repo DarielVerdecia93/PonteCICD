@@ -21,6 +21,9 @@
     Utilizacao a partir do instalador (sem interacao):
       -Account <conta> -PasswordFile <ficheiro>   conta de utilizador; a palavra-passe e lida do ficheiro
       -InstallIis                                 ativa as funcionalidades do IIS que faltem
+      -AdminUser <utilizador> -AdminPasswordFile <ficheiro>
+                                                  cria (ou substitui) o administrador do painel; a palavra-passe e lida do ficheiro.
+                                                  Sem isto o painel pede para o criar no primeiro acesso (a partir deste computador).
       -HostName <nome>                            nome do painel (omissao: admin-pontecicd), ex.: http://admin-pontecicd/
                                                   Regista-o no ficheiro hosts e em listenUrl; localhost:5080 continua a funcionar.
 
@@ -36,7 +39,9 @@ param(
     [switch]$InstallIis,
     [string]$Account,
     [string]$PasswordFile,
-    [string]$HostName = 'admin-pontecicd'
+    [string]$HostName = 'admin-pontecicd',
+    [string]$AdminUser,
+    [string]$AdminPasswordFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -196,6 +201,12 @@ if ($Uninstall) { Remove-HostsEntry; return }
 if (-not (Test-Path $exe)) { throw "Nao existe $exe. Publique antes: dotnet publish src\PonteCICD -c Release -o service" }
 Get-Process PonteCICD -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia em modo consola, se existir
 
+if ($AdminUser) {
+    if (-not $AdminPasswordFile -or -not (Test-Path $AdminPasswordFile)) { throw 'Com -AdminUser e preciso indicar -AdminPasswordFile.' }
+    & $exe --set-admin $AdminUser --password-file $AdminPasswordFile
+    if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel criar o administrador do painel (codigo $LASTEXITCODE)." }
+    Write-Host "Administrador do painel '$AdminUser' guardado."
+}
 if ($HostName -notmatch '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$') { throw "Nome do painel invalido: '$HostName' (use letras, numeros e hifens)." }
 Set-HostsEntry $HostName
 Set-ListenUrl $HostName

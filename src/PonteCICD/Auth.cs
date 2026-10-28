@@ -11,14 +11,13 @@ public sealed record UserInfo(string Name, bool IsDefaultPassword);
 
 /// <summary>
 /// Panel users, in secrets\users.json (next to the encrypted git token). Passwords are never stored:
-/// only a PBKDF2-SHA256 hash with a per-user salt. On the very first run it seeds admin / p4sw00rdAdm1n;
-/// the panel nags until that password is changed.
+/// only a PBKDF2-SHA256 hash with a per-user salt. There is NO default account: the installer (or
+/// "PonteCICD.exe --set-admin", or the panel's first-run setup page) creates the administrator.
 /// </summary>
 public sealed class UserStore
 {
-    public const string DefaultUser = "admin";
-    public const string DefaultPassword = "p4sw00rdAdm1n";
     public const int MinPasswordLength = 8;
+    static readonly System.Text.RegularExpressions.Regex UserNameRx = new(@"^[A-Za-z0-9._-]{3,32}$");
     const int Iterations = 210_000;
 
     sealed class UserRecord
@@ -47,11 +46,40 @@ public sealed class UserStore
     {
         _path = Path.Combine(store.Root, "secrets", "users.json");
         _data = Load();
-        if (_data.Users.Count == 0)
+    }
+
+    /// <summary>False until an administrator exists (fresh install, or users.json was removed/corrupted).</summary>
+    public bool HasUsers
+    {
+        get { lock (_lock) return _data.Users.Count > 0; }
+    }
+
+    /// <summary>Checks a new account: user name 3-32 chars (letters, digits . _ -) and a password of at least 8.</summary>
+    public static bool ValidateCredentials(string? name, string? password, out string error)
+    {
+        error = "";
+        if (name is null || !UserNameRx.IsMatch(name.Trim()))
+            error = "O nome de utilizador deve ter 3 a 32 caracteres (letras, numeros, ponto, hifen ou sublinhado).";
+        else if ((password ?? "").Length < MinPasswordLength)
+            error = $"A palavra-passe deve ter pelo menos {MinPasswordLength} caracteres.";
+        return error.Length == 0;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="name"/> the one and only administrator, replacing any existing account
+    /// (installer, reset command). With <paramref name="onlyIfEmpty"/> it refuses when a user already exists
+    /// (first-run setup page), checked under the same lock so two requests cannot both win.
+    /// </summary>
+    public bool SetAdmin(string? name, string? password, bool onlyIfEmpty, out string error)
+    {
+        if (!ValidateCredentials(name, password, out error)) return false;
+        lock (_lock)
         {
-            _data.Users.Add(NewRecord(DefaultUser, DefaultPassword, isDefault: true));
+            if (onlyIfEmpty && _data.Users.Count > 0) { error = "Ja existe um administrador."; return false; }
+            _data = new UsersFile { Users = [NewRecord(name!.Trim(), password!, isDefault: false)] };
             Save();
         }
+        return true;
     }
 
     public UserInfo? Get(string name)
@@ -85,7 +113,6 @@ public sealed class UserStore
         error = "";
         if (!Verify(name, current, out _)) { error = "A palavra-passe atual esta incorreta."; return false; }
         if (next.Length < MinPasswordLength) { error = $"A nova palavra-passe deve ter pelo menos {MinPasswordLength} caracteres."; return false; }
-        if (next == DefaultPassword) { error = "Escolha uma palavra-passe diferente da predefinida."; return false; }
         if (next == current) { error = "A nova palavra-passe deve ser diferente da atual."; return false; }
         lock (_lock)
         {
@@ -125,7 +152,7 @@ public sealed class UserStore
         }
         catch (Exception)
         {
-            // corrupted file: start over with the default user rather than locking everybody out
+            // corrupted file: no users, so the panel offers the first-run setup (from this computer)
         }
         return new();
     }
@@ -208,6 +235,22 @@ public static class AuthEndpoints
 
     public static void MapAuth(this RouteGroupBuilder api)
     {
+        // Does the panel need its first-run setup (no administrator yet)?
+        api.MapGet("/auth/status", (UserStore users) => Results.Ok(new { setupRequired = !users.HasUsers })).AllowAnonymous();
+
+        // First-run setup: only while there is no administrator, and only from this computer.
+        api.MapPost("/auth/setup", async (LoginRequest req, HttpContext ctx, UserStore users) =>
+        {
+            if (users.HasUsers) return Results.Conflict("Ja existe um administrador: inicie sessao.");
+            if (ctx.Connection.RemoteIpAddress is not { } ip || !System.Net.IPAddress.IsLoopback(ip))
+                return Results.Text("A configuracao inicial so pode ser feita a partir deste computador.", "text/plain", statusCode: 403);
+            if (!users.SetAdmin(req.Username, req.Password, onlyIfEmpty: true, out var error))
+                return Results.BadRequest(error);
+            var name = req.Username!.Trim();
+            await ctx.SignInAsync(PrincipalFor(users, name));
+            return Results.Ok(users.Get(name));
+        }).AllowAnonymous();
+
         api.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, UserStore users, LoginThrottle throttle) =>
         {
             var name = (req.Username ?? "").Trim();
@@ -241,5 +284,53 @@ public static class AuthEndpoints
             await ctx.SignInAsync(PrincipalFor(users, name));
             return Results.Ok(users.Get(name));
         });
+    }
+}
+
+/// <summary>
+/// "PonteCICD.exe --set-admin &lt;user&gt; [--password-file &lt;file&gt;]": creates/replaces the administrator without
+/// the panel. Used by the installer and to recover a forgotten password. Without --password-file it asks for the
+/// password in the console (not echoed).
+/// </summary>
+public static class AdminCli
+{
+    public static int Run(string[] args, UserStore users)
+    {
+        var name = ValueAfter(args, "--set-admin");
+        var file = ValueAfter(args, "--password-file");
+        string? password;
+        if (file is not null)
+        {
+            try { password = File.ReadAllText(file).TrimEnd('\r', '\n'); }
+            catch (Exception ex) { Console.Error.WriteLine($"ERRO: nao foi possivel ler o ficheiro da palavra-passe: {ex.Message}"); return 2; }
+        }
+        else
+        {
+            if (name is null) { Console.Error.WriteLine("Uso: PonteCICD.exe --set-admin <utilizador> [--password-file <ficheiro>]"); return 2; }
+            password = ReadHidden("Nova palavra-passe: ");
+            if (password != ReadHidden("Repita a palavra-passe: ")) { Console.Error.WriteLine("ERRO: as palavras-passe nao coincidem."); return 1; }
+        }
+        if (!users.SetAdmin(name, password, onlyIfEmpty: false, out var error)) { Console.Error.WriteLine($"ERRO: {error}"); return 1; }
+        Console.WriteLine($"Administrador '{name!.Trim()}' guardado. Reinicie o servico PonteCICD para aplicar.");
+        return 0;
+    }
+
+    static string? ValueAfter(string[] args, string flag)
+    {
+        var i = Array.IndexOf(args, flag);
+        return i >= 0 && i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[i + 1] : null;
+    }
+
+    static string ReadHidden(string prompt)
+    {
+        Console.Write(prompt);
+        var sb = new System.Text.StringBuilder();
+        while (Console.ReadKey(intercept: true) is var key && key.Key != ConsoleKey.Enter)
+        {
+            if (key.Key == ConsoleKey.Backspace) { if (sb.Length > 0) sb.Length--; }
+            else if (!char.IsControl(key.KeyChar)) sb.Append(key.KeyChar);
+        }
+        Console.WriteLine();
+        return sb.ToString();
     }
 }

@@ -18,6 +18,8 @@ if (string.IsNullOrWhiteSpace(root)) root = FindCiRoot(AppContext.BaseDirectory)
 var store = new CiStore(root);
 var gitAuth = new GitAuth(store);
 var users = new UserStore(store);
+// Modo linha de comandos (instalador / recuperar palavra-passe): grava o administrador e sai, sem arrancar o painel.
+if (args.Contains("--set-admin")) Environment.Exit(AdminCli.Run(args, users));
 // listenUrl admite varios URLs separados por ';'. Com um nome de host (p. ex. http://admin-pontecicd/) usa-se o http.sys,
 // que partilha o porto 80 com o IIS por nome de host; so com localhost/IP usa-se o Kestrel (sem registo de URLs).
 // "ListenUrl" (variavel de ambiente ou --ListenUrl=...) tem prioridade sobre o ci.json: serve para correr uma copia de

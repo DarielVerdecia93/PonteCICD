@@ -61,6 +61,7 @@ var
   AccountPage: TInputOptionWizardPage;
   CredPage: TInputQueryWizardPage;
   HostPage: TInputQueryWizardPage;
+  AdminPage: TInputQueryWizardPage;
 
 // Nome do painel: http://<nome>/ (regista-se no ficheiro hosts; localhost:5080 continua a funcionar).
 function PanelHost: String;
@@ -99,7 +100,16 @@ begin
   HostPage.Add('Nome do painel:', False);
   HostPage.Values[0] := 'admin-pontecicd';
 
-  AccountPage := CreateInputOptionPage(HostPage.ID,
+  // Administrador do painel: definido aqui, sem palavra-passe predefinida em lado nenhum.
+  AdminPage := CreateInputQueryPage(HostPage.ID,
+    'Administrador do painel', 'Crie o utilizador com que vai entrar no painel',
+    'Guarda-se apenas um hash da palavra-passe. Pode alterá-la depois no menu do utilizador do painel.');
+  AdminPage.Add('Utilizador (3 a 32 caracteres: letras, números, . - _):', False);
+  AdminPage.Add('Palavra-passe (mínimo 8 caracteres):', True);
+  AdminPage.Add('Repetir a palavra-passe:', True);
+  AdminPage.Values[0] := 'admin';
+
+  AccountPage := CreateInputOptionPage(AdminPage.ID,
     'Conta do serviço', 'Com que conta deve correr o serviço Ponte CI/CD?',
     'O serviço gere sites e application pools do IIS, por isso a conta é adicionada ao grupo de Administradores.',
     True, False);
@@ -115,9 +125,34 @@ begin
   CredPage.Values[0] := '.\' + GetUserNameString;
 end;
 
+// Atualização: se já existe um administrador na pasta de instalação, não se pergunta nem se altera.
+function AdminAlreadyExists: Boolean;
+begin
+  Result := FileExists(AddBackslash(WizardDirValue) + 'secrets\users.json');
+end;
+
+function IsValidUserName(const S: String): Boolean;
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := (Length(S) >= 3) and (Length(S) <= 32);
+  if not Result then Exit;
+  for I := 1 to Length(S) do
+  begin
+    C := S[I];
+    if not (((C >= 'a') and (C <= 'z')) or ((C >= 'A') and (C <= 'Z')) or ((C >= '0') and (C <= '9')) or (C = '.') or (C = '-') or (C = '_')) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := (PageID = CredPage.ID) and (AccountPage.SelectedValueIndex <> 1);
+  Result := ((PageID = CredPage.ID) and (AccountPage.SelectedValueIndex <> 1))
+         or ((PageID = AdminPage.ID) and AdminAlreadyExists);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -127,6 +162,24 @@ begin
   begin
     MsgBox('O nome do painel só pode ter letras minúsculas, números e hífens (ex.: admin-pontecicd).', mbError, MB_OK);
     Result := False;
+  end;
+  if CurPageID = AdminPage.ID then
+  begin
+    if not IsValidUserName(Trim(AdminPage.Values[0])) then
+    begin
+      MsgBox('O utilizador deve ter 3 a 32 caracteres: letras, números, ponto, hífen ou sublinhado.', mbError, MB_OK);
+      Result := False;
+    end
+    else if Length(AdminPage.Values[1]) < 8 then
+    begin
+      MsgBox('A palavra-passe deve ter pelo menos 8 caracteres.', mbError, MB_OK);
+      Result := False;
+    end
+    else if AdminPage.Values[1] <> AdminPage.Values[2] then
+    begin
+      MsgBox('As palavras-passe não coincidem.', mbError, MB_OK);
+      Result := False;
+    end;
   end;
   if (CurPageID = CredPage.ID) and ((Trim(CredPage.Values[0]) = '') or (CredPage.Values[1] = '')) then
   begin
@@ -149,11 +202,22 @@ end;
 
 procedure RunInstallScript;
 var
-  Args, PwdFile: String;
+  Args, PwdFile, AdminPwdFile: String;
+  PwdLines: TArrayOfString;
   Code: Integer;
 begin
-  Args := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\install-service.ps1') + '" -HostName ' + PanelHost;
+  Args :='-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\install-service.ps1') + '" -HostName ' + PanelHost;
   if WizardIsTaskSelected('installiis') then Args := Args + ' -InstallIis';
+  // Administrador do painel (só na primeira instalação): a palavra-passe segue num ficheiro temporário (UTF-8), apagado no fim.
+  AdminPwdFile := '';
+  if not AdminAlreadyExists then
+  begin
+    AdminPwdFile := ExpandConstant('{tmp}\lci-admin.txt');
+    SetArrayLength(PwdLines, 1);
+    PwdLines[0] := AdminPage.Values[1];
+    SaveStringsToUTF8File(AdminPwdFile, PwdLines, False);
+    Args := Args + ' -AdminUser "' + Trim(AdminPage.Values[0]) + '" -AdminPasswordFile "' + AdminPwdFile + '"';
+  end;
   PwdFile := '';
   if AccountPage.SelectedValueIndex = 1 then
   begin
@@ -169,6 +233,7 @@ begin
     MsgBox('O registo do serviço falhou (código ' + IntToStr(Code) + '). Execute como administrador:' + #13#10 +
       '  ' + ExpandConstant('{app}\install-service.ps1'), mbError, MB_OK);
   if PwdFile <> '' then DeleteFile(PwdFile);
+  if AdminPwdFile <> '' then DeleteFile(AdminPwdFile);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
