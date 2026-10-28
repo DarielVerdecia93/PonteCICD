@@ -207,6 +207,21 @@ Restart-Service PonteCICD             # reiniciar
 
 Sem o instalar, também se pode executar numa consola: `.\service\PonteCICD.exe`.
 
+### Executar em desenvolvimento (`dotnet run`) com o serviço instalado
+
+O serviço instalado já ocupa os endereços do painel (`http://admin-pontecicd/` e `http://localhost:5080/`), por isso uma segunda
+cópia não pode usá-los. Duas opções:
+
+- parar o serviço: `Stop-Service PonteCICD` (e `Start-Service PonteCICD` no fim); ou
+- usar outro endereço, sem mexer no `ci.json`:
+
+  ```powershell
+  dotnet run --project src\PonteCICD -- --ListenUrl=http://localhost:5081
+  ```
+
+Numa consola **sem administrador** o nome do painel (`admin-pontecicd`) não pode ser registado: a aplicação avisa e escuta só em
+`localhost`. Para o nome, use uma consola de administrador. Também o IIS só pode ser gerido com administrador.
+
 ## Atualizar o serviço após alterar o seu código
 
 ```powershell

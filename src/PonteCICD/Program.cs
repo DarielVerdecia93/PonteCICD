@@ -20,7 +20,21 @@ var gitAuth = new GitAuth(store);
 var users = new UserStore(store);
 // listenUrl admite varios URLs separados por ';'. Com um nome de host (p. ex. http://admin-pontecicd/) usa-se o http.sys,
 // que partilha o porto 80 com o IIS por nome de host; so com localhost/IP usa-se o Kestrel (sem registo de URLs).
-var listenUrls = store.Load().ListenUrl.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+// "ListenUrl" (variavel de ambiente ou --ListenUrl=...) tem prioridade sobre o ci.json: serve para correr uma copia de
+// desenvolvimento ao lado do servico instalado (ex.: --ListenUrl=http://localhost:5081) sem mexer no ci.json.
+var listenSetting = builder.Configuration["ListenUrl"];
+if (string.IsNullOrWhiteSpace(listenSetting)) listenSetting = store.Load().ListenUrl;
+var listenUrls = listenSetting.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+string? startupWarning = null;
+// O http.sys so deixa registar nomes de host a administradores. Sem elevacao (p. ex. "dotnet run" num terminal normal)
+// escuta so os enderecos locais, em vez de falhar ao arrancar.
+if (listenUrls.Any(u => !IsLoopbackUrl(u)) && !IsElevated())
+{
+    var local = listenUrls.Where(IsLoopbackUrl).ToArray();
+    if (local.Length == 0) local = ["http://localhost:5080"];
+    startupWarning = $"Sem permissoes de administrador: o nome do painel ({string.Join("; ", listenUrls.Where(u => !IsLoopbackUrl(u)))}) nao foi registado; a escutar so em {string.Join("; ", local)}.";
+    listenUrls = local;
+}
 if (listenUrls.Any(u => !IsLoopbackUrl(u)))
     builder.WebHost.UseHttpSys(o =>
     {
@@ -58,6 +72,7 @@ app.UseAuthorization();
 // then runs in degraded mode (iisAvailable=false) and the panel surfaces it.
 {
     var log = app.Services.GetRequiredService<ILogger<Program>>();
+    if (startupWarning is not null) log.LogWarning("{Warning}", startupWarning);
     if (!IsElevated())
         log.LogWarning("O servico nao e executado como administrador: o IIS nao podera ser criado/controlado. Reinstale o servico com permissoes elevadas.");
     if (!app.Services.GetRequiredService<IisStateProbe>().PreflightOk())
@@ -359,7 +374,20 @@ api.MapGet("/jobs/{id}/log", (string id, JobQueue queue) =>
     return Results.Text(reader.ReadToEnd());
 });
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (Exception ex) when (ex is System.Net.Sockets.SocketException or Microsoft.AspNetCore.Server.HttpSys.HttpSysException or IOException)
+{
+    // Causa habitual: outra instancia (o servico PonteCICD instalado) ja ocupa o endereco.
+    // Escreve na consola: nesta altura o host ja fechou o logger.
+    Console.Error.WriteLine();
+    Console.Error.WriteLine($"ERRO: nao foi possivel escutar em {string.Join("; ", listenUrls)}: {ex.Message}");
+    Console.Error.WriteLine("Se o servico PonteCICD esta a correr, pare-o (Stop-Service PonteCICD) ou use outro endereco:");
+    Console.Error.WriteLine("    dotnet run -- --ListenUrl=http://localhost:5081");
+    throw;
+}
 
 bool EnvExists(string name) => store.Load().Environments.Any(e => e.Name == name);
 
