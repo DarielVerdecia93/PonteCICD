@@ -58,9 +58,13 @@
   .live.on i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
   header .live { margin-right: auto; }
   /* Estado da verificação do remoto: pastilha flutuante discreta (não ocupa espaço nem bloqueia cliques). */
-  .statusbar { position: fixed; left: 16px; bottom: 16px; z-index: 5; max-width: calc(100vw - 32px); padding: 6px 12px; border-radius: 999px; background: var(--mica); border: 1px solid var(--border); box-shadow: var(--shadow-flyout); font-size: 12px; color: var(--muted); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); opacity: .88; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar { position: fixed; left: 12px; bottom: 12px; z-index: 5; max-width: calc(100vw - 24px); display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--mica); border: 1px solid var(--border); font-size: 11px; line-height: 1.5; color: var(--faint); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); opacity: .7; cursor: default; transition: opacity .15s; white-space: nowrap; overflow: hidden; }
   .statusbar:empty { display: none; }
-  .statusbar .err { pointer-events: auto; }
+  .statusbar:hover, .statusbar:focus, .statusbar.open { opacity: 1; color: var(--muted); box-shadow: var(--shadow-flyout); }
+  .statusbar .full { display: none; }
+  .statusbar:hover .full, .statusbar:focus .full, .statusbar.open .full { display: inline; }
+  .statusbar.bad { opacity: 1; color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+  @media (max-width: 760px) { .statusbar { left: 8px; bottom: 8px; } .statusbar.open .full { white-space: normal; } }
 
   main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 72px; display: grid; gap: 26px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
@@ -478,15 +482,21 @@ async function refresh() {
     notifyFinished();
     if (openLog) await loadLog();
   } catch (err) {
-    $('#meta').innerHTML = `<span class="err">Sem ligação com o serviço: ${esc(err.message)}</span>`;
+    const m = $('#meta'); m.className = 'statusbar bad'; m.title = err.message;
+    m.innerHTML = `<span aria-hidden="true">⚠</span><span>Sem ligação com o serviço</span>`;
   }
 }
 
 function renderMeta() {
   if (!state) return;
-  $('#meta').innerHTML = `remoto verificado ${ago(state.lastCheck)} (a cada ${fmtSecs(state.pollIntervalSec)})` +
-    (state.localRepoPath ? ` · a vigiar repo local` : '') +
-    (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
+  const el = $('#meta');
+  const ago_ = ago(state.lastCheck).replace(/^há /, '');
+  const full = `Remoto verificado ${ago(state.lastCheck)} (a cada ${fmtSecs(state.pollIntervalSec)})` +
+    (state.localRepoPath ? ' · a vigiar repo local' : '') + (state.lastError ? ` · ${state.lastError}` : '');
+  el.className = 'statusbar' + (state.lastError ? ' bad' : '') + (el.classList.contains('open') ? ' open' : '');
+  el.title = full;
+  el.tabIndex = 0;
+  el.innerHTML = `<span aria-hidden="true">${state.lastError ? '⚠' : '↻'}</span><span>${esc(ago_)}</span><span class="full">· ${esc(full)}</span>`;
 }
 const fmtSecs = s => s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`;
 const POLL_OPTIONS = [10, 20, 30, 60, 120, 300, 600];
@@ -507,6 +517,7 @@ function connect() {
 }
 restartUiTimer();
 setInterval(renderMeta, 1000);
+$('#meta').addEventListener('click', e => e.currentTarget.classList.toggle('open'));
 setInterval(() => document.querySelectorAll('[data-countdown]').forEach(el => {
   el.textContent = Math.max(0, Math.round((new Date(el.dataset.countdown) - Date.now()) / 1000)) + 's';
 }), 1000);
