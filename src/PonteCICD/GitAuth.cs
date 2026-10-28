@@ -87,6 +87,16 @@ public sealed class GitAuth
 
     GitSecret? Current() { lock (_lock) return _secret; }
 
+    /// <summary>Git output ready for the panel: no secrets, and the usual "bad/missing token" failures in plain words.</summary>
+    public static string Friendly(string text, string? token = null)
+    {
+        var clean = Redact(text, token).Trim();
+        if (clean.Contains("terminal prompts disabled") || clean.Contains("Authentication failed")
+            || clean.Contains("403") || clean.Contains("401"))
+            return "Token em falta, invalido ou sem permissao de leitura neste repositorio (ou o URL esta errado).";
+        return clean.Length > 400 ? clean[..400] : clean;
+    }
+
     /// <summary>Removes the token (and any user:token@ in URLs) from git output before showing it.</summary>
     public static string Redact(string text, string? token)
     {

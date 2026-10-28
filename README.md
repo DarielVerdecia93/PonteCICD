@@ -10,7 +10,7 @@ Painel: **http://admin-pontecicd/** (ou **http://localhost:5080/**)
 ## Como funciona
 
 - Cada **ambiente** = uma branch + uma porta (8090, 8091, ...) + uma configuração de compilação (`Desenvolvimento`, `Qualidade`...).
-  A branch escolhe-se num seletor visual (pesquisa, agrupada por `feature/`, `bugfix/`...), do **remoto** ou do **repo local**.
+  A branch escolhe-se num seletor visual (pesquisa, agrupada por `feature/`, `bugfix/`...), do **remoto** (e, se houver um `localRepoPath` no `ci.json`, também do **repo local**).
 - Deteção de alterações:
   - remoto: `git ls-remote` a cada `pollIntervalSec` (20 s); só descarrega se alguma branch se moveu;
   - repo local (`localRepoPath`): vigia-se o `.git`, pelo que um commit local (sem push) é detetado em poucos segundos.
@@ -66,16 +66,24 @@ O painel exige início de sessão e **não existe nenhuma conta nem palavra-pass
 - Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS (proxy inverso).
 - Instalações de versões anteriores podem ter ainda a conta predefinida antiga: o painel avisa até a palavra-passe ser alterada.
 
-## Primeira configuração: projeto e autenticação
+## Primeira configuração: acesso ao repositório
 
-Num PC novo, abra o painel, inicie sessão e abra o menu do utilizador → **Projeto e acesso ao repositório** (ou use o aviso «Configurar projeto e acesso»):
+Num PC novo só são precisos **dois dados**. Abra o painel, inicie sessão e abra o menu do utilizador → **Acesso ao repositório**
+(ou use o aviso «Configurar acesso ao repositório»):
 
 1. **URL do repositório** (HTTPS), de **Azure DevOps** (`https://dev.azure.com/org/projeto/_git/repo`) ou de **GitHub** (`https://github.com/org/repo.git`).
 2. **Token de acesso (PAT)**:
    - Azure DevOps: *User settings → Personal access tokens*, permissão **Code (Read)**;
    - GitHub: *Settings → Developer settings → Personal access tokens*, com leitura do repositório.
-3. **Solução (.sln)** e **projeto web (.csproj)** a publicar (relativos à raiz do repositório); opcionalmente a pasta de pacotes NuGet e o repositório local.
-4. **Testar ligação** confirma que o token e o URL funcionam; depois **Guardar**.
+
+**Guardar e ler branches** guarda os dados, lê o repositório e diz quantas branches encontrou (ou o erro real: token inválido, sem
+permissão, URL errado). **Testar ligação** faz só a verificação, sem guardar. Não é preciso ter o código descarregado.
+
+**A solução (`.sln`) e o projeto web (`.csproj`)** não se indicam: ao criar o primeiro ambiente, o painel procura-os no próprio branch,
+diretamente no repositório remoto, e escolhe o projeto web de ASP.NET (dando prioridade à aplicação — com `Views`, `Global.asax`,
+`Content`... — sobre projetos de serviços WCF, e ignorando projetos de testes). Se o repositório tiver uma estrutura invulgar e a
+deteção falhar, o painel avisa e pode fixá-los à mão no `ci.json` (`solutionFile`, `projectFile`; opcionalmente `packagesSource` e
+`localRepoPath`). Sem `.sln`, a restauração de pacotes usa o próprio projeto.
 
 O token fica **cifrado nesta máquina** (DPAPI, em `secrets\git-credential.bin`) e nunca é escrito no `ci.json` nem no URL. É enviado ao git
 como cabeçalho HTTP limitado ao servidor do repositório, tanto pelo serviço como pelo motor de deploy. Funciona com qualquer conta do serviço
@@ -85,7 +93,7 @@ como cabeçalho HTTP limitado ao servidor do repositório, tanto pelo serviço c
 
 No painel, **+ Novo ambiente**:
 
-1. Escolha a branch (separador **Remoto** ou **Meu repo local**; pesquisa por branch, autor ou mensagem).
+1. Escolha a branch (pesquisa por branch, autor ou mensagem; o separador **Meu repo local** só aparece se houver `localRepoPath` no `ci.json`).
 2. **Nome do ambiente** (preenchido a partir da branch), **Configuração de compilação** e, opcionalmente,
    **Pasta base do ambiente (IIS)** e **Porta** (vazio = automática).
 3. **Nome DNS** (opcional): ver abaixo.

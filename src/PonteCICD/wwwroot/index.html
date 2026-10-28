@@ -169,6 +169,7 @@
   .picker-head .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .picker-head input[type=search] { flex: 1; min-width: 200px; padding: 8px 12px; border-radius: var(--r-md); }
   .seg { display: inline-flex; border: 1px solid var(--border2); border-radius: var(--r-md); overflow: hidden; background: var(--panel2); }
+  .seg[hidden] { display: none; }
   .seg button { border: 0; border-radius: 0; background: transparent; }
   .seg button.on { background: var(--accent); color: var(--on-accent); }
   .branch-list { max-height: 52vh; overflow: auto; padding: 8px; }
@@ -251,7 +252,7 @@
     <button id="userBtn" aria-haspopup="menu" aria-expanded="false" title="Conta e definições"><span class="avatar" id="avatar">?</span><span class="uname" id="uname"></span> ▾</button>
     <div class="menu" role="menu">
       <div class="who"><b id="whoName">—</b>Sessão iniciada</div>
-      <button role="menuitem" id="projectBtn">Projeto e acesso ao repositório</button>
+      <button role="menuitem" id="projectBtn">Acesso ao repositório</button>
       <button role="menuitem" id="settingsBtn">Frequência de atualização</button>
       <hr>
       <button role="menuitem" id="passwordBtn">Alterar palavra-passe</button>
@@ -262,7 +263,7 @@
 <main>
   <div class="card err" id="iisWarn" hidden style="padding:12px 16px"></div>
   <div class="card" id="pwdWarn" hidden style="padding:12px 16px;border-left:4px solid var(--bad)"><b>Esta conta ainda usa a palavra-passe predefinida de uma versão anterior.</b> Altere-a para proteger o painel. <button class="primary" onclick="openPassword()">Alterar agora</button></div>
-  <div class="card" id="projectWarn" hidden style="padding:12px 16px">Ainda não há projeto configurado. <button class="primary" onclick="openProject()">Configurar projeto e acesso</button></div>
+  <div class="card" id="projectWarn" hidden style="padding:12px 16px">Ainda não há repositório configurado. <button class="primary" onclick="openProject()">Configurar acesso ao repositório</button></div>
   <section>
     <h2>Ambientes</h2>
     <div class="envs" id="envs"></div>
@@ -374,38 +375,24 @@
 
 <dialog id="project">
   <form method="dialog" id="projectForm">
-    <div class="picker-head"><b>Projeto e acesso ao repositório</b></div>
+    <div class="picker-head"><b>Acesso ao repositório</b></div>
     <div class="picker-foot">
       <div class="foot-grid">
         <label class="f">URL do repositório (Azure DevOps ou GitHub, HTTPS)
-          <input name="repoUrl" placeholder="https://dev.azure.com/organizacao/projeto/_git/repositorio" autocomplete="off">
+          <input name="repoUrl" placeholder="https://dev.azure.com/organizacao/projeto/_git/repositorio" autocomplete="off" required>
         </label>
         <label class="f">Token de acesso (PAT)
           <input name="token" type="password" autocomplete="new-password" placeholder="Cole aqui o token">
           <span class="hint">Azure DevOps: User settings → Personal access tokens (permissão Code: Read). GitHub: Settings → Developer settings → token com acesso de leitura ao repositório. Fica cifrado nesta máquina; nunca é guardado no ci.json.</span>
         </label>
-        <label class="f">Utilizador <span class="hint" style="display:inline">(opcional; no Azure DevOps pode ficar vazio)</span>
-          <input name="tokenUser" autocomplete="off">
-        </label>
-        <label class="f">Solução (.sln) <span class="hint" style="display:inline">relativa à raiz do repositório</span>
-          <input name="solutionFile" placeholder="MeuProjeto.sln" autocomplete="off">
-        </label>
-        <label class="f">Projeto web (.csproj) a publicar
-          <input name="projectFile" placeholder="MeuProjeto.Web\MeuProjeto.Web.csproj" autocomplete="off">
-        </label>
-        <label class="f">Pasta de pacotes NuGet <span class="hint" style="display:inline">(opcional)</span>
-          <input name="packagesSource" autocomplete="off">
-        </label>
-        <label class="f">Repositório local para «Meu repo local» <span class="hint" style="display:inline">(opcional)</span>
-          <input name="localRepoPath" placeholder="C:\Users\...\source\repos\MeuProjeto" autocomplete="off">
-        </label>
       </div>
-      <div id="projectMsg"></div>
+      <div class="muted" style="font-size:12px">Não precisa de ter o código descarregado nem de indicar solução ou projeto: o painel lê as branches diretamente do repositório e deteta o projeto web de cada branch ao criar o ambiente.</div>
+      <div id="projectMsg" role="status"></div>
       <div class="foot-actions">
         <button type="button" id="projectTest">Testar ligação</button>
         <button type="button" id="projectClearToken" hidden>Remover token</button>
         <button value="cancel" formnovalidate>Cancelar</button>
-        <button class="primary" value="ok">Guardar</button>
+        <button class="primary" id="projectSave" value="ok">Guardar e ler branches</button>
       </div>
     </div>
   </form>
@@ -692,6 +679,15 @@ async function loadConfigs() {
   sel.innerHTML = list.map(c => `<option${c === want ? ' selected' : ''}>${esc(c)}</option>`).join('');
 }
 
+function emptyBranchesMessage() {
+  if (picker.source === 'local') return 'Não há branches do repo local (localRepoPath está configurado?).';
+  if (branches.length > 0) return 'Nenhuma branch corresponde.';
+  if (state && state.projectConfigured === false)
+    return 'Ainda não há repositório configurado. Abra o menu do utilizador → <b>Acesso ao repositório</b> e indique o URL e o token.';
+  if (state?.lastError) return `Não foi possível ler o repositório: ${esc(state.lastError)}<br><span class="muted">Verifique o URL e o token em <b>Acesso ao repositório</b>.</span>`;
+  return 'A ler as branches do repositório… (a primeira vez pode demorar alguns segundos)';
+}
+
 async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   picker.env = env;
   picker.mode = mode;
@@ -714,11 +710,33 @@ async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   $('#pickerOk').disabled = !picker.selected;
   // Los campos de solo-creación (nome/configuração/auto-deploy/sitePath) se muestran en crear Y duplicar, no en editar.
   document.querySelectorAll('[data-new-only]').forEach(el => el.hidden = mode === 'edit');
+  // «Meu repo local» so existe se houver um repositorio local configurado (ci.json); por omissao so se usa o remoto.
+  const hasLocal = !!state?.localRepoPath;
+  $('#sourceSeg').hidden = !hasLocal;
+  if (!hasLocal && picker.source === 'local') picker.source = 'remote';
   $('#picker').showModal();
   branches = await api('GET', '/api/branches');
   renderBranches();
   loadConfigs();
   f.q.focus();
+  watchBranchesWhileEmpty();
+}
+
+// Enquanto o repositorio ainda esta a ser lido (primeira vez), a lista atualiza-se sozinha em vez de ficar vazia.
+let pickerPoll = null;
+function watchBranchesWhileEmpty() {
+  clearInterval(pickerPoll);
+  if (branches.length > 0) return;
+  let tries = 0;
+  pickerPoll = setInterval(async () => {
+    if (!$('#picker').open || ++tries > 40) { clearInterval(pickerPoll); return; }
+    try {
+      branches = await api('GET', '/api/branches');
+      await refresh();
+      renderBranches();
+      if (branches.length > 0) { clearInterval(pickerPoll); loadConfigs(); }
+    } catch { /* tenta de novo */ }
+  }, 2000);
 }
 
 function renderBranches() {
@@ -747,7 +765,7 @@ function renderBranches() {
           <span class="sub"><code>${short(b.commit)}</code> ${esc(b.subject)} · ${esc(b.author)}</span>
         </div>`;
       }).join('')}
-    </div>`).join('') || `<div class="empty">${picker.source === 'local' ? 'Não há branches do repo local (localRepoPath está configurado?).' : 'Nenhuma branch corresponde.'}</div>`;
+    </div>`).join('') || `<div class="empty">${emptyBranchesMessage()}</div>`;
   $('#pickedLabel').innerHTML = picker.selected ? `Selecionada: <code>${esc(picker.selected.name)}</code> (${SOURCE[picker.selected.source]})` : 'Nenhuma branch selecionada';
   $('#pickerOk').disabled = !picker.selected;
 }
@@ -846,48 +864,51 @@ $('#settingsForm').addEventListener('submit', async ev => {
   } catch (err) { $('#settingsErr').textContent = err.message; }
 });
 
-// ---------------------------------------------------------------- projeto e token de acesso
+// ---------------------------------------------------------------- acesso ao repositório (URL + token)
 async function openProject() {
   const f = $('#projectForm');
   $('#projectMsg').textContent = ''; $('#projectMsg').className = '';
   try {
     const p = await api('GET', '/api/project');
-    for (const k of ['repoUrl', 'solutionFile', 'projectFile', 'packagesSource', 'localRepoPath', 'tokenUser']) f[k].value = p[k] ?? '';
+    f.repoUrl.value = p.repoUrl ?? '';
     f.token.value = '';
     f.token.placeholder = p.hasToken ? 'Token guardado (deixe em branco para o manter)' : 'Cole aqui o token';
     $('#projectClearToken').hidden = !p.hasToken;
   } catch (err) { $('#projectMsg').textContent = err.message; }
   $('#project').showModal();
+  f.repoUrl.focus();
 }
 $('#projectBtn').onclick = openProject;
-const projectBody = (f, extra = {}) => ({
-  repoUrl: f.repoUrl.value, solutionFile: f.solutionFile.value, projectFile: f.projectFile.value,
-  packagesSource: f.packagesSource.value, localRepoPath: f.localRepoPath.value,
-  tokenUser: f.tokenUser.value, token: f.token.value, ...extra,
-});
+const projectBody = (f, extra = {}) => ({ repoUrl: f.repoUrl.value, token: f.token.value, ...extra });
+const setProjectMsg = (kind, text) => { const m = $('#projectMsg'); m.className = kind; m.textContent = text; };
+
 $('#projectTest').onclick = async () => {
-  const msg = $('#projectMsg'); msg.className = ''; msg.textContent = 'A testar a ligação…';
+  setProjectMsg('', 'A testar a ligação…');
   try {
     const r = await api('POST', '/api/project/test', projectBody($('#projectForm')));
-    msg.className = 'ok'; msg.textContent = `Ligação OK (${r.branches} branches visíveis).`;
-  } catch (err) { msg.className = 'err'; msg.textContent = err.message; }
+    setProjectMsg('ok', `Ligação OK (${r.branches} branches visíveis).`);
+  } catch (err) { setProjectMsg('err', err.message); }
 };
 $('#projectClearToken').onclick = async () => {
   if (!confirm('Remover o token guardado? O acesso ao repositório deixará de funcionar até indicar outro.')) return;
   try {
     await api('PUT', '/api/project', projectBody($('#projectForm'), { token: '', clearToken: true }));
     toast('Token removido', 'ok'); $('#project').close(); refresh();
-  } catch (err) { $('#projectMsg').className = 'err'; $('#projectMsg').textContent = err.message; }
+  } catch (err) { setProjectMsg('err', err.message); }
 };
 $('#projectForm').addEventListener('submit', async ev => {
   if (ev.submitter?.value !== 'ok') return;
   ev.preventDefault();
+  const btn = $('#projectSave'); btn.disabled = true;
+  setProjectMsg('', 'A guardar e a ler as branches do repositório… (pode demorar alguns segundos)');
   try {
-    await api('PUT', '/api/project', projectBody(ev.target));
+    const r = await api('PUT', '/api/project', projectBody(ev.target));
+    if (r.error) { setProjectMsg('err', `Guardado, mas não foi possível ler o repositório: ${r.error}`); refresh(); return; }
     $('#project').close();
-    toast('Projeto guardado: a verificar o repositório…', 'ok');
+    toast(r.pending ? 'Guardado: o repositório é grande e continua a ser lido…' : `Ligado ao repositório: ${r.branches} branches encontradas.`, 'ok');
     refresh();
-  } catch (err) { $('#projectMsg').className = 'err'; $('#projectMsg').textContent = err.message; }
+  } catch (err) { setProjectMsg('err', err.message); }
+  finally { btn.disabled = false; }
 });
 
 // ---------------------------------------------------------------- sessão, menu do utilizador e palavra-passe

@@ -129,10 +129,27 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
     }
 
     /// <summary>Build configurations declared in the web project (csproj) of a branch, e.g. Desenvolvimento, Qualidade...</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, DetectedProject?> _detected = new();
+
+    /// <summary>Solution and web project of a branch, found in the repository itself (cached per commit).</summary>
+    public async Task<DetectedProject?> DetectProjectAsync(string? branch, string? source, CancellationToken ct)
+    {
+        var b = branch is null ? Branches.FirstOrDefault() : Find(branch, source ?? BranchSource.Remote);
+        if (b is null) return null;
+        if (_detected.TryGetValue(b.Commit, out var cached)) return cached;
+        var found = await ProjectDetector.DetectAsync(store.MirrorDir, b.Commit, ct);
+        if (_detected.Count > 200) _detected.Clear();
+        _detected[b.Commit] = found;
+        return found;
+    }
+
     public async Task<List<string>> ConfigurationsAsync(string? branch, string? source, CancellationToken ct)
     {
         var b = branch is null ? Branches.FirstOrDefault() : Find(branch, source ?? BranchSource.Remote);
         var projectFile = store.Load().ProjectFile.Replace('\\', '/');
+        // Sem projeto configurado, procura-o no proprio branch (nao e preciso indicar nada nem ter o codigo descarregado).
+        if (b is not null && string.IsNullOrWhiteSpace(projectFile))
+            projectFile = (await DetectProjectAsync(b.Name, b.Source, ct))?.Project?.Replace('\\', '/') ?? "";
         if (b is null || string.IsNullOrWhiteSpace(projectFile)) return [];
         var (code, output) = await Git.RunAsync(["show", $"{b.Commit}:{projectFile}"], store.MirrorDir, ct);
         if (code != 0) return [];
