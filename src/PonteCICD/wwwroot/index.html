@@ -261,7 +261,7 @@
 </header>
 <main>
   <div class="card err" id="iisWarn" hidden style="padding:12px 16px"></div>
-  <div class="card" id="pwdWarn" hidden style="padding:12px 16px;border-left:4px solid var(--bad)"><b>Está a usar a palavra-passe predefinida.</b> Altere-a para proteger o painel. <button class="primary" onclick="openPassword()">Alterar agora</button></div>
+  <div class="card" id="pwdWarn" hidden style="padding:12px 16px;border-left:4px solid var(--bad)"><b>Esta conta ainda usa a palavra-passe predefinida de uma versão anterior.</b> Altere-a para proteger o painel. <button class="primary" onclick="openPassword()">Alterar agora</button></div>
   <div class="card" id="projectWarn" hidden style="padding:12px 16px">Ainda não há projeto configurado. <button class="primary" onclick="openProject()">Configurar projeto e acesso</button></div>
   <section>
     <h2>Ambientes</h2>
@@ -334,10 +334,14 @@
         <label class="f">Utilizador
           <input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
         </label>
-        <label class="f">Palavra-passe
+        <label class="f">Palavra-passe <span class="hint" id="loginPwdHint" style="display:inline" hidden>(mínimo 8 caracteres)</span>
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
+        <label class="f" id="loginAgainWrap" hidden>Repetir a palavra-passe
+          <input name="again" type="password" autocomplete="new-password">
+        </label>
       </div>
+      <div class="muted" id="loginSub" style="font-size:12px" hidden>Configuração inicial: ainda não existe nenhum administrador. Crie o utilizador com que vai entrar no painel (só é possível a partir deste computador).</div>
       <div class="err" id="loginErr" role="alert"></div>
       <div class="foot-actions"><button class="primary" id="loginOk" value="ok">Entrar</button></div>
     </div>
@@ -895,6 +899,18 @@ function applyMe(u) {
   $('#whoName').textContent = u.name;
   $('#pwdWarn').hidden = !u.isDefaultPassword;
 }
+// Sem administrador (instalação sem o instalador, ou users.json apagado) o mesmo diálogo passa a «Configuração inicial».
+let loginSetup = false;
+function setLoginMode(setup) {
+  loginSetup = setup;
+  const f = $('#loginForm');
+  $('#loginAgainWrap').hidden = !setup;
+  $('#loginSub').hidden = !setup;
+  $('#loginPwdHint').hidden = !setup;
+  f.again.required = setup;
+  f.password.autocomplete = setup ? 'new-password' : 'current-password';
+  $('#loginOk').textContent = setup ? 'Criar administrador e entrar' : 'Entrar';
+}
 function showLogin() {
   const d = $('#login');
   if (d.open) return;
@@ -903,8 +919,11 @@ function showLogin() {
   document.querySelectorAll('dialog[open]').forEach(x => x.close());
   $('#loginErr').textContent = '';
   $('#loginForm').password.value = '';
+  $('#loginForm').again.value = '';
+  setLoginMode(false);
   d.showModal();
   $('#loginForm').username.focus();
+  fetch('/api/auth/status').then(r => r.json()).then(st => setLoginMode(!!st.setupRequired)).catch(() => {});
 }
 // O diálogo de login não se fecha com Esc: é obrigatório para usar o painel.
 $('#login').addEventListener('cancel', ev => ev.preventDefault());
@@ -913,8 +932,9 @@ $('#loginForm').addEventListener('submit', async ev => {
   const f = ev.target, btn = $('#loginOk');
   btn.disabled = true; $('#loginErr').textContent = '';
   try {
-    applyMe(await api('POST', '/api/auth/login', { username: f.username.value, password: f.password.value }));
-    f.password.value = '';
+    if (loginSetup && f.password.value !== f.again.value) throw new Error('As palavras-passe não coincidem.');
+    applyMe(await api('POST', loginSetup ? '/api/auth/setup' : '/api/auth/login', { username: f.username.value, password: f.password.value }));
+    f.password.value = ''; f.again.value = '';
     $('#login').close();
     refresh();
     connect();

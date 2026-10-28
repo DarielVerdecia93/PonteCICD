@@ -47,16 +47,24 @@ O painel responde em **`http://admin-pontecicd/`** (nome editável) e, em altern
 
 ## Acesso ao painel (login)
 
-O painel exige início de sessão. Na primeira execução cria-se o utilizador **`admin`** com a palavra-passe **`p4sw00rdAdm1n`**.
+O painel exige início de sessão e **não existe nenhuma conta nem palavra-passe predefinida**: o administrador é criado por si.
 
-- **Altere-a logo:** menu do utilizador (canto superior direito) → **Alterar palavra-passe**. Enquanto for a predefinida, o painel mostra um aviso.
-- Menu do utilizador: *Projeto e acesso ao repositório*, *Frequência de atualização*, *Alterar palavra-passe* e *Terminar sessão*.
+- **Pelo instalador:** a página «Administrador do painel» pede o utilizador e a palavra-passe (com confirmação). Numa atualização,
+  se já existir um administrador, não se pergunta nada e não se altera.
+- **Sem instalador** (instalação manual, `dotnet run`, ou se `secrets\users.json` for apagado): ao abrir o painel aparece a
+  **Configuração inicial**, onde cria o administrador. Só é aceite a partir deste computador e só enquanto não houver administrador.
+  Em alternativa, pela linha de comandos (uma consola de administrador): `.\service\PonteCICD.exe --set-admin <utilizador>`
+  (pede a palavra-passe sem a mostrar) ou `install-service.ps1 -AdminUser <utilizador> -AdminPasswordFile <ficheiro>`.
+- **Alterar a palavra-passe:** menu do utilizador (canto superior direito) → **Alterar palavra-passe**. O menu também tem
+  *Projeto e acesso ao repositório*, *Frequência de atualização* e *Terminar sessão*.
+- **Esqueceu-se da palavra-passe:** pare o serviço (`Stop-Service PonteCICD`), execute
+  `.\service\PonteCICD.exe --set-admin <utilizador>` e arranque-o de novo. Isto substitui a conta de administrador.
 - A sessão dura 12 h sem atividade. Ao mudar a palavra-passe, as outras sessões abertas terminam.
-- Após 5 tentativas falhadas, o utilizador fica bloqueado 1 minuto.
-- As palavras-passe nunca são guardadas: só um hash PBKDF2 em `secrets\users.json`. Se se esquecer da palavra-passe,
-  pare o serviço, apague `secrets\users.json` e arranque-o: volta o `admin` / `p4sw00rdAdm1n`.
-- Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS
-  (proxy inverso) e mude a palavra-passe predefinida.
+  Após 5 tentativas falhadas, o utilizador fica bloqueado 1 minuto.
+- As palavras-passe nunca são guardadas: só um hash PBKDF2 em `secrets\users.json`. Utilizador: 3 a 32 caracteres
+  (letras, números, `.`, `-`, `_`); palavra-passe: mínimo 8 caracteres.
+- Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS (proxy inverso).
+- Instalações de versões anteriores podem ter ainda a conta predefinida antiga: o painel avisa até a palavra-passe ser alterada.
 
 ## Primeira configuração: projeto e autenticação
 
@@ -124,7 +132,8 @@ e execute-o como administrador. O instalador:
 1. copia o serviço (autocontido: **não precisa de .NET instalado**), o motor `engine\` e o `install-service.ps1`
    para `C:\PonteCICD` (pasta editável);
 2. cria um `ci.json` base apenas na primeira instalação (as atualizações **não** tocam nos ambientes existentes);
-3. opcionalmente ativa as funcionalidades do IIS que faltem;
+3. pergunta o **nome do painel** e o **utilizador e palavra-passe do administrador** do painel (sem contas predefinidas; numa atualização não se repete);
+   opcionalmente ativa as funcionalidades do IIS que faltem;
 4. pergunta a conta do serviço — `LocalSystem` (sem palavra-passe) ou a sua conta do Windows (usa as suas credenciais de git) —,
    adiciona-a aos Administradores, regista o serviço `PonteCICD`, configura o reinício automático e arranca-o;
 5. abre o painel em **http://admin-pontecicd/** (ou no nome que tiver escolhido).
