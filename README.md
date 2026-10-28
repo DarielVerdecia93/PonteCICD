@@ -3,7 +3,7 @@
 CI/CD local para implantar projetos .NET legados (p. ex. `ENMC.BalcaoUnico.UI.WebApplication`) por branch, sem tocar no repositório
 nem na base de dados (a BD é administrada por outra parte: aqui só se configura a respetiva connection string).
 
-Painel: **http://localhost:5080**
+Painel: **http://admin-pontecicd/** (ou **http://localhost:5080/**)
 
 © Magia Technologies Labs
 
@@ -31,6 +31,20 @@ Painel: **http://localhost:5080**
 - Guardam-se os últimos `keepBackups` zips por ambiente. `UploadFiles` (dados de utilizadores) não é tocado nem entra nos zips.
 - Os jobs executam-se um de cada vez; cada execução fica em `runs\` (json + log), visível no painel.
 
+## Endereço do painel
+
+O painel responde em **`http://admin-pontecicd/`** (nome editável) e, em alternativa, em `http://localhost:5080/`.
+
+- O instalador pergunta o nome do painel; `install-service.ps1 -HostName <nome>` faz o mesmo. Ambos acrescentam
+  `127.0.0.1 <nome>` ao ficheiro `hosts` (linha marcada com `# PonteCICD`, retirada ao desinstalar) e guardam o `listenUrl` no `ci.json`
+  (`http://<nome>/;http://localhost:5080/`).
+- O nome usa o **porto 80**, que o IIS também usa: o painel corre sobre o http.sys do Windows, que reparte o porto por nome de host,
+  pelo que o *Default Web Site* e os restantes sites do IIS continuam a funcionar.
+- Só funciona **neste computador** (o nome aponta para 127.0.0.1). Para outros computadores, peça ao responsável da rede um
+  registo DNS para o nome apontando para este PC e use HTTPS.
+- `listenUrl` aceita vários endereços separados por `;`. Com `localhost`/IP usa-se o Kestrel; com um nome de host, o http.sys.
+- Antivírus (Kaspersky e outros) podem bloquear a alteração do ficheiro `hosts`; nesse caso use `http://localhost:5080/`.
+
 ## Acesso ao painel (login)
 
 O painel exige início de sessão. Na primeira execução cria-se o utilizador **`admin`** com a palavra-passe **`p4sw00rdAdm1n`**.
@@ -41,7 +55,7 @@ O painel exige início de sessão. Na primeira execução cria-se o utilizador *
 - Após 5 tentativas falhadas, o utilizador fica bloqueado 1 minuto.
 - As palavras-passe nunca são guardadas: só um hash PBKDF2 em `secrets\users.json`. Se se esquecer da palavra-passe,
   pare o serviço, apague `secrets\users.json` e arranque-o: volta o `admin` / `p4sw00rdAdm1n`.
-- Por omissão o painel só aceita ligações locais (`listenUrl` = `http://localhost:5080`). Se o expuser na rede, use HTTPS
+- Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS
   (proxy inverso) e mude a palavra-passe predefinida.
 
 ## Primeira configuração: projeto e autenticação
@@ -100,7 +114,7 @@ e execute-o como administrador. O instalador:
 3. opcionalmente ativa as funcionalidades do IIS que faltem;
 4. pergunta a conta do serviço — `LocalSystem` (sem palavra-passe) ou a sua conta do Windows (usa as suas credenciais de git) —,
    adiciona-a aos Administradores, regista o serviço `PonteCICD`, configura o reinício automático e arranca-o;
-5. abre o painel em **http://localhost:5080**.
+5. abre o painel em **http://admin-pontecicd/** (ou no nome que tiver escolhido).
 
 Para atualizar, execute o instalador da nova versão por cima. Para desinstalar, use «Aplicações» do Windows
 (remove o serviço; `ci.json`, `envs\`, `runs\` e `mirror.git` ficam na pasta).
@@ -168,7 +182,7 @@ verifica o IIS e configura o reinício automático em caso de falha.
    ao nível do sistema com um PAT (`git config --system credential.helper store`) ou use uma `repoUrl`
    com o token numa variável de ambiente.
 
-3. Abrir o painel em **http://localhost:5080**.
+3. Abrir o painel em **http://admin-pontecicd/** (ou **http://localhost:5080/**).
 
 ### Gerir o serviço
 

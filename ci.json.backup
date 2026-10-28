@@ -1,0 +1,25 @@
+{
+  "repoUrl": "https://dev.azure.com/AmbisigDevOps/ENSE/_git/ENSE",
+  "solutionFile": "EMNC.BalcaoUnico.sln",
+  "projectFile": "ENMC.BalcaoUnico.UI.WebApplication\\ENMC.BalcaoUnico.UI.WebApplication.csproj",
+  "packagesSource": "C:\\Users\\dverd\\source\\repos\\ENSE\\packages",
+  "msbuild": "",
+  "excludeFromPublish": [
+    "DBScripts"
+  ],
+  "includeInPublish": [
+    "Resources\\Aspose.Total.lic"
+  ],
+  "preserve": [
+    "UploadFiles"
+  ],
+  "healthTimeoutSec": 240,
+  "keepBackups": 20,
+  "keepReleases": 5,
+  "localRepoPath": "C:\\Users\\dverd\\source\\repos\\ENSE",
+  "pollIntervalSec": 20,
+  "quietSec": 15,
+  "listenUrl": "http://localhost:5080",
+  "workDir": "C:\\lci-work",
+  "environments": []
+}

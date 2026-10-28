@@ -21,6 +21,8 @@
     Utilizacao a partir do instalador (sem interacao):
       -Account <conta> -PasswordFile <ficheiro>   conta de utilizador; a palavra-passe e lida do ficheiro
       -InstallIis                                 ativa as funcionalidades do IIS que faltem
+      -HostName <nome>                            nome do painel (omissao: admin-pontecicd), ex.: http://admin-pontecicd/
+                                                  Regista-o no ficheiro hosts e em listenUrl; localhost:5080 continua a funcionar.
 
 .EXAMPLE
     .\install-service.ps1                 # corre com a SUA conta (pede a palavra-passe do Windows)
@@ -33,7 +35,8 @@ param(
     [switch]$LocalSystem,
     [switch]$InstallIis,
     [string]$Account,
-    [string]$PasswordFile
+    [string]$PasswordFile,
+    [string]$HostName = 'admin-pontecicd'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,6 +89,39 @@ function Grant-ServiceLogonRight([string]$account) {
         Write-Host "Concedido 'Iniciar sessao como servico' a $account."
     }
     Remove-Item $tmp -Recurse -Force
+}
+
+$hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+$hostsTag = '# PonteCICD'
+
+# Nome do painel: 127.0.0.1 <nome> no ficheiro hosts (idempotente, marcado para o poder retirar depois).
+function Set-HostsEntry([string]$hostName) {
+    $lines = @(Get-Content $hostsFile -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch [regex]::Escape($hostsTag) })
+    $lines += "127.0.0.1`t$hostName`t$hostsTag"
+    Set-Content $hostsFile -Value $lines -Encoding ASCII
+    Write-Host "Nome do painel registado no ficheiro hosts: $hostName -> 127.0.0.1"
+}
+function Remove-HostsEntry {
+    if (-not (Test-Path $hostsFile)) { return }
+    $lines = @(Get-Content $hostsFile | Where-Object { $_ -notmatch [regex]::Escape($hostsTag) })
+    Set-Content $hostsFile -Value $lines -Encoding ASCII
+}
+
+# listenUrl do ci.json: o nome (porto 80, partilhado com o IIS por nome de host) + localhost:5080 como alternativa.
+function Set-ListenUrl([string]$hostName) {
+    $ci = Join-Path $PSScriptRoot 'ci.json'
+    $url = "http://$hostName/;http://localhost:5080/"
+    if (Test-Path $ci) {
+        # Substitui so a linha do listenUrl (sem reserializar o ci.json, que o servico edita).
+        $text = Get-Content $ci -Raw -Encoding UTF8
+        if ($text -match '"listenUrl"\s*:\s*"[^"]*"') {
+            $text = [regex]::Replace($text, '("listenUrl"\s*:\s*")[^"]*(")', { param($m) $m.Groups[1].Value + $url + $m.Groups[2].Value })
+            [IO.File]::WriteAllText($ci, $text, (New-Object Text.UTF8Encoding($false)))
+        } else {
+            Write-Host "AVISO: o ci.json nao tem listenUrl; acrescente: ""listenUrl"": ""$url"""
+        }
+    }
+    Write-Host "Painel em http://$hostName/ (e http://localhost:5080/)"
 }
 
 # Ativa as funcionalidades do IIS de que o CI precisa (Windows cliente ou Windows Server).
@@ -155,22 +191,25 @@ if (Get-Service $name -ErrorAction SilentlyContinue) {
     Start-Sleep -Seconds 2
     Write-Host "Servico $name removido."
 }
-if ($Uninstall) { return }
+if ($Uninstall) { Remove-HostsEntry; return }
 
 if (-not (Test-Path $exe)) { throw "Nao existe $exe. Publique antes: dotnet publish src\PonteCICD -c Release -o service" }
 Get-Process PonteCICD -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia em modo consola, se existir
 
+if ($HostName -notmatch '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$') { throw "Nome do painel invalido: '$HostName' (use letras, numeros e hifens)." }
+Set-HostsEntry $HostName
+Set-ListenUrl $HostName
 if ($InstallIis) { Install-Iis }
 
 if ($LocalSystem) {
     Test-IisReadiness
     New-Service -Name $name -BinaryPathName "`"$exe`"" -DisplayName 'Ponte CI/CD' `
-        -Description 'Deploy continuo de projetos legados por branch (painel em http://localhost:5080)' `
+        -Description "Deploy continuo de projetos legados por branch (painel em http://$HostName/)" `
         -StartupType Automatic | Out-Null   # sem -Credential => LocalSystem (ja e administrador local)
     & sc.exe failure $name reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
     Start-Service $name
     Write-Host ''
-    Write-Host "Servico $name instalado como LocalSystem e arrancado. Painel: http://localhost:5080"
+    Write-Host "Servico $name instalado como LocalSystem e arrancado. Painel: http://$HostName/ (ou http://localhost:5080/)"
     Write-Host 'NOTA: o LocalSystem nao leva as suas credenciais de git. Se o repo for privado (Azure DevOps/GitHub),'
     Write-Host '      abra o painel, carregue em "Projeto e acesso" e indique o URL do repositorio e o token (PAT).'
     return
@@ -188,8 +227,8 @@ Add-ToLocalAdministrators $cred.UserName
 Test-IisReadiness
 
 New-Service -Name $name -BinaryPathName "`"$exe`"" -DisplayName 'Ponte CI/CD' `
-    -Description 'Deploy continuo de projetos legados por branch (painel em http://localhost:5080)' `
+    -Description "Deploy continuo de projetos legados por branch (painel em http://$HostName/)" `
     -StartupType Automatic -Credential $cred | Out-Null
 & sc.exe failure $name reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
 Start-Service $name
-Write-Host "Servico $name instalado e arrancado. Painel: http://localhost:5080"
+Write-Host "Servico $name instalado e arrancado. Painel: http://$HostName/ (ou http://localhost:5080/)"
