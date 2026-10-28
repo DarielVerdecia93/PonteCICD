@@ -66,8 +66,21 @@ No painel, **+ Novo ambiente**:
 1. Escolha a branch (separador **Remoto** ou **Meu repo local**; pesquisa por branch, autor ou mensagem).
 2. **Nome do ambiente** (preenchido a partir da branch), **Configuração de compilação** e, opcionalmente,
    **Pasta base do ambiente (IIS)** e **Porta** (vazio = automática).
-3. **Auto-deploy** implanta automaticamente a cada novo commit da branch.
-4. **Criar e implantar** cria o ambiente e lança o primeiro deploy.
+3. **Nome DNS** (opcional): ver abaixo.
+4. **Auto-deploy** implanta automaticamente a cada novo commit da branch.
+5. **Criar e implantar** cria o ambiente e lança o primeiro deploy.
+
+### Nome DNS por ambiente (sem porto no endereço)
+
+Cada ambiente corre no seu porto (ex.: 4058). Com **Nome DNS** (ex.: `sitio.teste.br`) o mesmo site do IIS recebe **dois enlaces**:
+`*:4058` (acesso direto e verificação de saúde, como sempre) e `*:80:sitio.teste.br`. O endereço passa a ser
+**`http://sitio.teste.br/`**, sem mostrar o porto; o painel mostra ambos os links.
+
+- O nome tem de existir no **DNS** (registo A para o IP deste servidor) ou, em testes, no ficheiro `hosts` de quem aceder.
+- Usa o porto 80 do IIS, partilhado por nome de host: o *Default Web Site*, o painel e os outros ambientes não são afetados.
+- Cada nome só pode ser de um ambiente. Se já estiver associado a outro site do IIS, o deploy avisa e o ambiente
+  continua a responder no seu porto.
+- Alterar ou retirar o nome reimplanta o ambiente, para atualizar os enlaces. Só HTTP (para HTTPS é preciso certificado e enlace próprio).
 
 ## Estrutura
 

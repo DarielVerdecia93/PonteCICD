@@ -74,7 +74,9 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisSta
         {
             e.Name, e.Branch, e.Source, e.Port, e.Configuration, e.AutoDeploy,
             e.SitePath, e.SiteName, e.AppPoolName, e.HostHeader,
-            Url = $"http://localhost:{e.Port}/",
+            // Com nome DNS o acesso publico e http://<nome>/ (porto 80, sem porto visivel); LocalUrl e o do porto do ambiente.
+            Url = string.IsNullOrWhiteSpace(e.HostHeader) ? $"http://localhost:{e.Port}/" : $"http://{e.HostHeader}/",
+            LocalUrl = $"http://localhost:{e.Port}/",
             Running = probe.Running(e.Name),
             Deployed = deployed,
             Head = head,
@@ -218,10 +220,15 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     var (okPath, pathError) = EnvValidation.ValidateSitePath(sitePath, cfg0.Environments);
     if (!okPath) return Results.BadRequest(pathError);
 
+    var (okHost, hostHeader, hostError) = EnvValidation.ValidateHostName(req.HostHeader);
+    if (!okHost) return Results.BadRequest(hostError);
+
     string? error = null;
     var cfg = store.Update(c =>
     {
         if (c.Environments.Any(e => e.Name == name)) { error = $"Ja existe o ambiente '{name}'."; return; }
+        var (okUnique, uniqueError) = EnvValidation.ValidateHostUnique(hostHeader, c.Environments);
+        if (!okUnique) { error = uniqueError; return; }
         var port = req.Port ?? Enumerable.Range(8090, 200).First(p => c.Environments.All(e => e.Port != p) && PortProbe.IsFree(p));
         if (c.Environments.Any(e => e.Port == port)) { error = $"A porta {port} já está a ser usada por outro ambiente."; return; }
 
@@ -243,7 +250,7 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
             HealthPath = !string.IsNullOrWhiteSpace(template?.HealthPath) ? template!.HealthPath : "/",
             AutoDeploy = req.AutoDeploy ?? template?.AutoDeploy ?? true,
             SitePath = sitePath,
-            HostHeader = (req.HostHeader ?? "").Trim(),
+            HostHeader = hostHeader,
         });
     });
     if (error is not null) return Results.Conflict(error);
@@ -305,7 +312,14 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
         env.Source = source;
         if (!string.IsNullOrWhiteSpace(req.Configuration)) env.Configuration = req.Configuration;
         if (req.AutoDeploy is not null) env.AutoDeploy = req.AutoDeploy.Value;
-        if (req.HostHeader is not null) env.HostHeader = req.HostHeader.Trim();
+        if (req.HostHeader is not null)
+        {
+            var (okHost, hostHeader, hostError) = EnvValidation.ValidateHostName(req.HostHeader);
+            if (!okHost) { error = hostError; return; }
+            var (okUnique, uniqueError) = EnvValidation.ValidateHostUnique(hostHeader, c.Environments.Where(e => e.Name != name));
+            if (!okUnique) { error = uniqueError; return; }
+            env.HostHeader = hostHeader;
+        }
     });
     if (env is null) return Results.NotFound();
     return error is null ? Results.Ok(env) : Results.BadRequest(error);

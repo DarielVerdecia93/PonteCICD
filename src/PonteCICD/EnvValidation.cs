@@ -44,6 +44,32 @@ public static class EnvValidation
         return (true, null);
     }
 
+    static readonly System.Text.RegularExpressions.Regex HostNameRx = new(
+        @"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Optional DNS name for the IIS binding (host header), e.g. "sitio.teste.br". Only the name: no scheme, port or path.
+    /// Returns the normalized (trimmed, lower-case) value; empty means "no host header".
+    /// </summary>
+    public static (bool ok, string value, string? error) ValidateHostName(string? host)
+    {
+        var h = (host ?? "").Trim().ToLowerInvariant();
+        if (h.Length == 0) return (true, "", null);
+        if (!HostNameRx.IsMatch(h))
+            return (false, h, "O nome DNS e invalido: use so letras, numeros, hifens e pontos (ex.: sitio.teste.br), sem http://, porta nem barras.");
+        return (true, h, null);
+    }
+
+    /// <summary>The DNS name goes on port 80 of IIS, so two environments cannot share it.</summary>
+    public static (bool ok, string? error) ValidateHostUnique(string host, IEnumerable<EnvConfig> others)
+    {
+        if (host.Length == 0) return (true, null);
+        if (host is "localhost") return (false, "O nome DNS nao pode ser 'localhost'.");
+        var clash = others.FirstOrDefault(e => string.Equals(e.HostHeader, host, StringComparison.OrdinalIgnoreCase));
+        return clash is null ? (true, null) : (false, $"O nome DNS '{host}' ja esta a ser usado pelo ambiente '{clash.Name}'.");
+    }
+
     static string Normalize(string path) =>
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(path.Trim()));
 
