@@ -890,10 +890,10 @@ $('#projectTest').onclick = async () => {
   } catch (err) { setProjectMsg('err', err.message); }
 };
 $('#projectClearToken').onclick = async () => {
-  if (!confirm('Remover o token guardado? O acesso ao repositório deixará de funcionar até indicar outro.')) return;
+  if (!confirm('Remover o token guardado? As branches deixam de estar disponíveis e a cópia local do repositório é apagada, até indicar outro token.')) return;
   try {
     await api('PUT', '/api/project', projectBody($('#projectForm'), { token: '', clearToken: true }));
-    toast('Token removido', 'ok'); $('#project').close(); refresh();
+    toast('Token removido: as branches deixaram de estar disponíveis.', 'ok'); $('#project').close(); refresh();
   } catch (err) { setProjectMsg('err', err.message); }
 };
 $('#projectForm').addEventListener('submit', async ev => {
