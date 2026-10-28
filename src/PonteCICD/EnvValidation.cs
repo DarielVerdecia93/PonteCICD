@@ -1,4 +1,4 @@
-namespace PonteCI;
+namespace PonteCICD;
 
 /// <summary>
 /// Pure validation helpers for the environment API, kept free of the web host so they can be unit tested.

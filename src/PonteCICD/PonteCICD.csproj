@@ -4,9 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PonteCI</RootNamespace>
-    <AssemblyName>PonteCI</AssemblyName>
+    <RootNamespace>PonteCICD</RootNamespace>
+    <AssemblyName>PonteCICD</AssemblyName>
+    <ApplicationIcon>pontecicd.ico</ApplicationIcon>
+    <Company>Magia Technologies Labs</Company>
+    <Authors>Magia Technologies Labs</Authors>
+    <Product>Ponte CI/CD</Product>
+    <Copyright>Copyright (C) Magia Technologies Labs</Copyright>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- App solo para Windows (DPAPI, servicio de Windows, IIS). -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
   <!-- Copia el panel (wwwroot) junto al exe tambien en build/dotnet run, no solo en publish. -->
@@ -16,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

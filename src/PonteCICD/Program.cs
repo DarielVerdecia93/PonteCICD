@@ -1,13 +1,13 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using PonteCI;
+using PonteCICD;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = AppContext.BaseDirectory,
 });
-builder.Host.UseWindowsService(o => o.ServiceName = "PonteCI");
+builder.Host.UseWindowsService(o => o.ServiceName = "PonteCICD");
 
 // Por defecto la raiz del CI es la carpeta del repo Legados-CI (la que contiene engine\deploy.ps1 y ci.json).
 // Se busca subiendo desde el exe, asi funciona igual con dotnet run (bin\Debug\...) y con el publicado (service\).
@@ -15,10 +15,12 @@ builder.Host.UseWindowsService(o => o.ServiceName = "PonteCI");
 var root = builder.Configuration["CiRoot"];
 if (string.IsNullOrWhiteSpace(root)) root = FindCiRoot(AppContext.BaseDirectory);
 var store = new CiStore(root);
+var gitAuth = new GitAuth(store);
 builder.WebHost.UseUrls(store.Load().ListenUrl);
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton(store);
+builder.Services.AddSingleton(gitAuth);
 builder.Services.AddSingleton<Notifier>();
 builder.Services.AddSingleton<Mirror>();
 builder.Services.AddSingleton<JobQueue>();
@@ -78,6 +80,7 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisSta
         cfg.LocalRepoPath,
         IisAvailable = probe.IisAvailable,
         IisError = probe.Error,
+        ProjectConfigured = !string.IsNullOrWhiteSpace(cfg.RepoUrl),
         Environments = envs,
     };
 });
@@ -89,6 +92,63 @@ api.MapPut("/settings", (SettingsRequest req, Notifier notifier) =>
     store.Update(c => c.PollIntervalSec = req.PollIntervalSec.Value);
     notifier.Changed();
     return Results.Ok();
+});
+
+api.MapGet("/project", () =>
+{
+    var c = store.Load();
+    return new { c.RepoUrl, c.SolutionFile, c.ProjectFile, c.PackagesSource, c.LocalRepoPath, HasToken = gitAuth.HasToken, TokenUser = gitAuth.User };
+});
+
+api.MapPut("/project", (ProjectRequest req, Mirror mirror, Notifier notifier) =>
+{
+    var url = (req.RepoUrl ?? "").Trim();
+    if (url.Length > 0 && !Regex.IsMatch(url, @"^https?://", RegexOptions.IgnoreCase))
+        return Results.BadRequest("O URL do repositorio deve comecar por https:// (ou http://).");
+    // Com token guardado no painel, o URL nao leva «utilizador:token@» (nem ${VAR}): entraria em conflito com a autenticacao.
+    if (!string.IsNullOrWhiteSpace(req.Token) || (gitAuth.HasToken && req.ClearToken != true))
+        url = Regex.Replace(url, @"^(https?://)[^/@]*@", "$1", RegexOptions.IgnoreCase);
+    store.Update(c =>
+    {
+        c.RepoUrl = url;
+        c.SolutionFile = (req.SolutionFile ?? "").Trim();
+        c.ProjectFile = (req.ProjectFile ?? "").Trim();
+        c.PackagesSource = (req.PackagesSource ?? "").Trim();
+        c.LocalRepoPath = (req.LocalRepoPath ?? "").Trim();
+    });
+    if (req.ClearToken == true) gitAuth.Clear();
+    else if (!string.IsNullOrWhiteSpace(req.Token)) gitAuth.Save(req.TokenUser, req.Token);
+    // Verifica o remoto ja com a nova configuracao (o resultado aparece no painel).
+    _ = Task.Run(async () => { try { await mirror.SyncRemoteAsync(force: true, CancellationToken.None); } catch (Exception) { /* fica em lastError */ } });
+    notifier.Changed();
+    return Results.Ok();
+});
+
+api.MapPost("/project/test", async (ProjectRequest req, CancellationToken ct) =>
+{
+    var url = Mirror.ExpandEnvVars((string.IsNullOrWhiteSpace(req.RepoUrl) ? store.Load().RepoUrl : req.RepoUrl).Trim());
+    if (url.Length == 0) return Results.BadRequest("Indique o URL do repositorio.");
+    var secret = string.IsNullOrWhiteSpace(req.Token) ? null : new GitSecret(req.TokenUser ?? "", req.Token.Trim());
+    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    cts.CancelAfter(TimeSpan.FromSeconds(30));
+    try
+    {
+        var (code, output) = await Git.RunAsync(["ls-remote", "--heads", url], null, cts.Token, secret, url);
+        var clean = GitAuth.Redact(output, secret?.Token).Trim();
+        if (code != 0)
+        {
+            // git sem token valido acaba em "could not read Username": traduz para algo acionavel.
+            var hint = clean.Contains("terminal prompts disabled") || clean.Contains("Authentication failed") || clean.Contains("403") || clean.Contains("401")
+                ? "Token em falta, invalido ou sem permissao de leitura neste repositorio (ou o URL esta errado)."
+                : (clean.Length > 400 ? clean[..400] : clean);
+            return Results.BadRequest($"A ligacao falhou: {hint}");
+        }
+        return Results.Ok(new { branches = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length });
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.BadRequest("Tempo esgotado (30 s) a ligar ao repositorio.");
+    }
 });
 
 api.MapGet("/branches", (Mirror mirror) => mirror.Branches);
@@ -290,6 +350,10 @@ static bool IsElevated()
 }
 
 record SettingsRequest(int? PollIntervalSec);
+
+record ProjectRequest(
+    string? RepoUrl, string? SolutionFile, string? ProjectFile, string? PackagesSource, string? LocalRepoPath,
+    string? TokenUser, string? Token, bool? ClearToken);
 
 record EnvRequest(
     string? Name, string? Branch, string? Source, int? Port, string? Configuration, bool? AutoDeploy,

@@ -28,29 +28,29 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Tests
-        run: dotnet test tests/PonteCI.Tests -c Release
+        run: dotnet test tests/PonteCICD.Tests -c Release
 
       - name: Publicar servicio (autocontenido)
         run: >
-          dotnet publish src/PonteCI -c Release -r win-x64 --self-contained
+          dotnet publish src/PonteCICD -c Release -r win-x64 --self-contained
           -p:Version=${{ steps.ver.outputs.version }} -o artifacts/service
 
       - name: Instalar Inno Setup
         run: choco install innosetup --no-progress -y
 
       - name: Compilar instalador
-        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\PonteCI.iss'
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\PonteCICD.iss'
 
       - name: Publicar release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/PonteCI-Setup-${{ steps.ver.outputs.version }}.exe
+          files: artifacts/PonteCICD-Setup-${{ steps.ver.outputs.version }}.exe
           generate_release_notes: true
 
       - name: Guardar instalador (ejecución manual)
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: PonteCI-Setup
+          name: PonteCICD-Setup
           path: artifacts/*.exe

@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 
-namespace PonteCI;
+namespace PonteCICD;
 
 public enum JobKind { Deploy, Rollback, Start, Stop, Restart, Purge }
 
@@ -170,6 +170,7 @@ public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILog
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         psi.Environment["GCM_INTERACTIVE"] = "never";
+        GitAuth.Apply(psi);   // o motor (PowerShell) herda o token para o git
 
         await output.WriteLineAsync($"> {script} {string.Join(' ', args)}");
         var last = new List<string>();
