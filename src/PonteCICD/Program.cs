@@ -18,7 +18,16 @@ if (string.IsNullOrWhiteSpace(root)) root = FindCiRoot(AppContext.BaseDirectory)
 var store = new CiStore(root);
 var gitAuth = new GitAuth(store);
 var users = new UserStore(store);
-builder.WebHost.UseUrls(store.Load().ListenUrl);
+// listenUrl admite varios URLs separados por ';'. Com um nome de host (p. ex. http://admin-pontecicd/) usa-se o http.sys,
+// que partilha o porto 80 com o IIS por nome de host; so com localhost/IP usa-se o Kestrel (sem registo de URLs).
+var listenUrls = store.Load().ListenUrl.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+if (listenUrls.Any(u => !IsLoopbackUrl(u)))
+    builder.WebHost.UseHttpSys(o =>
+    {
+        foreach (var u in listenUrls) o.UrlPrefixes.Add(u.EndsWith('/') ? u : u + "/");
+    });
+else
+    builder.WebHost.UseUrls(listenUrls);
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton(store);
@@ -339,6 +348,10 @@ api.MapGet("/jobs/{id}/log", (string id, JobQueue queue) =>
 app.Run();
 
 bool EnvExists(string name) => store.Load().Environments.Any(e => e.Name == name);
+
+static bool IsLoopbackUrl(string url) =>
+    Uri.TryCreate(url.Replace("+", "wildcard").Replace("*", "wildcard"), UriKind.Absolute, out var uri)
+    && uri.Host is "localhost" or "127.0.0.1" or "[::1]" or "::1";
 
 static string FindCiRoot(string start)
 {

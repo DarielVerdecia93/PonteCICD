@@ -15,7 +15,7 @@
   "localRepoPath": "",
   "pollIntervalSec": 20,
   "quietSec": 15,
-  "listenUrl": "http://localhost:5080",
+  "listenUrl": "http://admin-pontecicd/;http://localhost:5080/",
   "workDir": "",
   "environments": []
 }

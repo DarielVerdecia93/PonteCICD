@@ -50,7 +50,7 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installer\ci.template.json"; DestDir: "{app}"; DestName: "ci.json"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
-Name: "{group}\Painel Ponte CI/CD"; Filename: "http://localhost:5080"; IconFilename: "{app}\pontecicd.ico"
+Name: "{group}\Painel Ponte CI/CD"; Filename: "{code:PanelUrl}"; IconFilename: "{app}\pontecicd.ico"
 Name: "{group}\Desinstalar Ponte CI/CD"; Filename: "{uninstallexe}"
 
 [UninstallRun]
@@ -60,10 +60,46 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 var
   AccountPage: TInputOptionWizardPage;
   CredPage: TInputQueryWizardPage;
+  HostPage: TInputQueryWizardPage;
+
+// Nome do painel: http://<nome>/ (regista-se no ficheiro hosts; localhost:5080 continua a funcionar).
+function PanelHost: String;
+begin
+  Result := Lowercase(Trim(HostPage.Values[0]));
+end;
+
+function PanelUrl(Param: String): String;
+begin
+  Result := 'http://' + PanelHost + '/';
+end;
+
+function IsValidHostName(const S: String): Boolean;
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := (Length(S) >= 1) and (Length(S) <= 63) and (S[1] <> '-') and (S[Length(S)] <> '-');
+  if not Result then Exit;
+  for I := 1 to Length(S) do
+  begin
+    C := S[I];
+    if not (((C >= 'a') and (C <= 'z')) or ((C >= '0') and (C <= '9')) or (C = '-')) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
 
 procedure InitializeWizard;
 begin
-  AccountPage := CreateInputOptionPage(wpSelectTasks,
+  HostPage := CreateInputQueryPage(wpSelectTasks,
+    'Endereço do painel', 'Com que nome quer aceder ao painel?',
+    'O painel ficará em http://<nome>/ neste computador (usa o porto 80, partilhado com o IIS) e também em http://localhost:5080/.');
+  HostPage.Add('Nome do painel:', False);
+  HostPage.Values[0] := 'admin-pontecicd';
+
+  AccountPage := CreateInputOptionPage(HostPage.ID,
     'Conta do serviço', 'Com que conta deve correr o serviço Ponte CI/CD?',
     'O serviço gere sites e application pools do IIS, por isso a conta é adicionada ao grupo de Administradores.',
     True, False);
@@ -87,6 +123,11 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
+  if (CurPageID = HostPage.ID) and not IsValidHostName(PanelHost) then
+  begin
+    MsgBox('O nome do painel só pode ter letras minúsculas, números e hífens (ex.: admin-pontecicd).', mbError, MB_OK);
+    Result := False;
+  end;
   if (CurPageID = CredPage.ID) and ((Trim(CredPage.Values[0]) = '') or (CredPage.Values[1] = '')) then
   begin
     MsgBox('Indique a conta e a palavra-passe.', mbError, MB_OK);
@@ -111,7 +152,7 @@ var
   Args, PwdFile: String;
   Code: Integer;
 begin
-  Args := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\install-service.ps1') + '"';
+  Args := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\install-service.ps1') + '" -HostName ' + PanelHost;
   if WizardIsTaskSelected('installiis') then Args := Args + ' -InstallIis';
   PwdFile := '';
   if AccountPage.SelectedValueIndex = 1 then
@@ -136,5 +177,5 @@ var
 begin
   if CurStep = ssPostInstall then RunInstallScript;
   if (CurStep = ssDone) and WizardIsTaskSelected('openpanel') then
-    ShellExec('open', 'http://localhost:5080', '', '', SW_SHOWNORMAL, ewNoWait, Code);
+    ShellExec('open', PanelUrl(''), '', '', SW_SHOWNORMAL, ewNoWait, Code);
 end;
