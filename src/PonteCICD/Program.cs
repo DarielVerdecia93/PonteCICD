@@ -122,7 +122,7 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisSta
         cfg.LocalRepoPath,
         IisAvailable = probe.IisAvailable,
         IisError = probe.Error,
-        ProjectConfigured = !string.IsNullOrWhiteSpace(cfg.RepoUrl),
+        ProjectConfigured = GitAuth.HasCredentials(cfg),
         Environments = envs,
     };
 });
@@ -150,6 +150,7 @@ api.MapPut("/project", async (ProjectRequest req, Mirror mirror, Notifier notifi
     // Com token guardado no painel, o URL nao leva «utilizador:token@» (nem ${VAR}): entraria em conflito com a autenticacao.
     if (!string.IsNullOrWhiteSpace(req.Token) || (gitAuth.HasToken && req.ClearToken != true))
         url = Regex.Replace(url, @"^(https?://)[^/@]*@", "$1", RegexOptions.IgnoreCase);
+    var previousUrl = store.Load().RepoUrl;
     store.Update(c =>
     {
         c.RepoUrl = url;
@@ -161,13 +162,17 @@ api.MapPut("/project", async (ProjectRequest req, Mirror mirror, Notifier notifi
     });
     if (req.ClearToken == true) gitAuth.Clear();
     else if (!string.IsNullOrWhiteSpace(req.Token)) gitAuth.Save(req.TokenUser, req.Token);
+    // Outro repositorio: nao ficam objetos do anterior no espelho.
+    if (!string.IsNullOrWhiteSpace(previousUrl) && !string.Equals(previousUrl.Trim(), url, StringComparison.OrdinalIgnoreCase))
+        await mirror.ResetAsync();
     // Le o remoto ja com a nova configuracao e responde com o resultado (quantas branches, ou o erro real).
     // Se demorar mais de 60 s (repositorio grande) segue em segundo plano e o painel mostra o progresso.
     var sync = Task.Run(async () => { try { await mirror.SyncRemoteAsync(force: true, CancellationToken.None); } catch (Exception) { /* fica em lastError */ } });
     var finished = await Task.WhenAny(sync, Task.Delay(TimeSpan.FromSeconds(60)));
     notifier.Changed();
     if (finished != sync) return Results.Ok(new { pending = true, branches = 0, error = (string?)null });
-    var syncError = string.IsNullOrWhiteSpace(url) ? null : mirror.LastError;
+    // Sem URL e token nao ha repositorio: o "erro" e so o aviso de falta de configuracao (a resposta ja diz branches = 0).
+    var syncError = mirror.HasAccess ? mirror.LastError : null;
     return Results.Ok(new
     {
         pending = false,
@@ -374,11 +379,14 @@ api.MapDelete("/envs/{name}", (string name, JobQueue queue) =>
     EnvExists(name) ? Results.Ok(queue.Enqueue(name, JobKind.Purge, "manual")) : Results.NotFound());
 
 // arg: commit to deploy (default: branch tip) or backup to restore (default: latest).
-api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, JobQueue queue) =>
+api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, JobQueue queue, Mirror mirror) =>
 {
     if (!EnvExists(name)) return Results.NotFound();
     if (!Enum.TryParse<JobKind>(action, ignoreCase: true, out var kind) || kind == JobKind.Purge)
         return Results.BadRequest($"Acao desconhecida: {action}");
+    // Implantar precisa de ler o repositorio: sem URL e token nao ha acesso (parar, iniciar e rollback nao precisam).
+    if (kind == JobKind.Deploy && !mirror.HasAccess)
+        return Results.Conflict("Acesso ao repositorio nao configurado: indique o URL e o token em «Acesso ao repositorio» antes de implantar.");
     if (queue.HasPending(name)) return Results.Conflict($"Já existe uma operação em curso para {name}.");
     return Results.Ok(queue.Enqueue(name, kind, "manual", arg));
 });

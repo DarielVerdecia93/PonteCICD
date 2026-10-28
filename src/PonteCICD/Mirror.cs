@@ -25,7 +25,13 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
     readonly SemaphoreSlim _lock = new(1, 1);
     readonly Dictionary<string, List<CommitInfo>> _pendingCache = [];
 
-    public IReadOnlyList<BranchInfo> Branches { get; private set; } = [];
+    IReadOnlyList<BranchInfo> _branches = [];
+
+    /// <summary>Whether the repository access is configured (URL + token). Everything below depends on it.</summary>
+    public bool HasAccess => GitAuth.HasCredentials(store.Load());
+
+    /// <summary>The branches read from the repository, only while the access (URL + token) exists.</summary>
+    public IReadOnlyList<BranchInfo> Branches => HasAccess ? _branches : [];
     public DateTimeOffset? LastCheck { get; private set; }
     public DateTimeOffset? LastChange { get; private set; }
     public string? LastError { get; private set; }
@@ -51,8 +57,13 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         try
         {
             var cfg = store.Load();
+            // Sem URL e token nao se mantem nada do repositorio: nem as branches em memoria nem o espelho em disco.
+            if (!GitAuth.HasCredentials(cfg))
+            {
+                WipeLocked();
+                return Fail("Acesso ao repositorio nao configurado: indique o URL e o token em «Acesso ao repositorio» no painel.");
+            }
             var repoUrl = ExpandEnvVars(cfg.RepoUrl);
-            if (string.IsNullOrWhiteSpace(repoUrl)) return Fail("Repositorio nao configurado: indique o URL e o token em «Projeto e repositorio» no painel.");
             if (!Directory.Exists(store.MirrorDir))
             {
                 var (code, output) = await Git.RunAsync(["clone", "--bare", "--quiet", repoUrl, store.MirrorDir], null, ct);
@@ -95,7 +106,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
     public async Task<bool> SyncLocalAsync(CancellationToken ct)
     {
         var localRepo = store.Load().LocalRepoPath;
-        if (string.IsNullOrWhiteSpace(localRepo) || !Directory.Exists(store.MirrorDir)) return false;
+        if (!HasAccess || string.IsNullOrWhiteSpace(localRepo) || !Directory.Exists(store.MirrorDir)) return false;
 
         await _lock.WaitAsync(ct);
         try
@@ -181,7 +192,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
 
         var changed = branches.Count != Branches.Count
                       || branches.Any(b => Find(b.Name, b.Source)?.Commit != b.Commit);
-        Branches = branches;
+        _branches = branches;
         Ok(changed);
         return changed;
     }
@@ -197,10 +208,43 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
 
     bool Fail(string error)
     {
-        if (LastError != error) log.LogWarning("{Error}", error);
+        var isNew = LastError != error;
+        if (isNew) log.LogWarning("{Error}", error);
         LastError = error;
-        notifier.Changed();
+        if (isNew) notifier.Changed();
         return false;
+    }
+
+    /// <summary>Forgets everything read from the repository: in-memory branches and the on-disk mirror (it holds the whole history).</summary>
+    public async Task ResetAsync(CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try { WipeLocked(); }
+        finally { _lock.Release(); }
+        notifier.Changed();
+    }
+
+    // Caller holds _lock.
+    void WipeLocked()
+    {
+        _branches = [];
+        _detected.Clear();
+        lock (_pendingCache) _pendingCache.Clear();
+        LastChange = null;
+        var dir = store.MirrorDir;
+        if (!Directory.Exists(dir)) return;
+        try
+        {
+            // Git marks its object files read-only; Directory.Delete would fail on them.
+            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                File.SetAttributes(f, FileAttributes.Normal);
+            Directory.Delete(dir, recursive: true);
+            log.LogInformation("Espelho do repositorio apagado (sem URL/token configurados).");
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Nao foi possivel apagar o espelho do repositorio ({Dir}); as branches ja nao se mostram.", dir);
+        }
     }
 
     static List<CommitInfo> ParseCommits(string output) =>

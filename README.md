@@ -85,6 +85,11 @@ diretamente no repositório remoto, e escolhe o projeto web de ASP.NET (dando pr
 deteção falhar, o painel avisa e pode fixá-los à mão no `ci.json` (`solutionFile`, `projectFile`; opcionalmente `packagesSource` e
 `localRepoPath`). Sem `.sln`, a restauração de pacotes usa o próprio projeto.
 
+**Sem URL e token não há acesso ao repositório.** As branches só estão disponíveis enquanto existirem **ambos** (ou credenciais no
+próprio URL, em instalações antigas). Se remover o token ou apagar o URL, as branches deixam de aparecer de imediato, a cópia local do
+repositório (`mirror.git`) é **apagada** do disco e não se pode implantar (parar, iniciar e rollback continuam a funcionar). Mudar para
+outro repositório também apaga a cópia do anterior. Os sites já implantados não são afetados.
+
 O token fica **cifrado nesta máquina** (DPAPI, em `secrets\git-credential.bin`) e nunca é escrito no `ci.json` nem no URL. É enviado ao git
 como cabeçalho HTTP limitado ao servidor do repositório, tanto pelo serviço como pelo motor de deploy. Funciona com qualquer conta do serviço
 (incluindo `LocalSystem`), sem precisar de configurar o git à mão. Requer git 2.31 ou superior.

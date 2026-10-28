@@ -36,6 +36,18 @@ public sealed class GitAuth
     string FilePath => Path.Combine(_store.Root, "secrets", "git-credential.bin");
 
     public bool HasToken { get { lock (_lock) return _secret is not null; } }
+
+    /// <summary>
+    /// The panel only shows (and keeps) the repository's branches while there is BOTH a URL and a credential: the token
+    /// saved in the panel, or credentials embedded in the URL (older installations). Without them nothing is exposed.
+    /// </summary>
+    public static bool HasCredentials(CiConfig cfg) => HasCredentials(cfg.RepoUrl, Instance?.HasToken == true);
+
+    public static bool HasCredentials(string? repoUrl, bool hasToken) =>
+        !string.IsNullOrWhiteSpace(repoUrl) && (hasToken || UrlHasUserInfo(repoUrl));
+
+    static bool UrlHasUserInfo(string url) =>
+        System.Text.RegularExpressions.Regex.IsMatch(url.Trim(), @"^https?://[^/@\s]+@", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     public string User { get { lock (_lock) return _secret?.User ?? ""; } }
 
     public void Save(string? user, string token)
