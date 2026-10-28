@@ -4,8 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>LegadosCI</RootNamespace>
-    <AssemblyName>LegadosCI</AssemblyName>
+    <RootNamespace>PonteCI</RootNamespace>
+    <AssemblyName>PonteCI</AssemblyName>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 

@@ -1,7 +1,7 @@
-using LegadosCI;
+using PonteCI;
 using Xunit;
 
-namespace LegadosCI.Tests;
+namespace PonteCI.Tests;
 
 public class EnvValidationTests
 {

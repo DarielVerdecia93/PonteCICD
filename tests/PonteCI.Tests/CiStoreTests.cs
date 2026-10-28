@@ -1,8 +1,8 @@
 using System.Text.Json;
-using LegadosCI;
+using PonteCI;
 using Xunit;
 
-namespace LegadosCI.Tests;
+namespace PonteCI.Tests;
 
 public class CiStoreTests
 {
@@ -51,7 +51,7 @@ public class CiStoreTests
     [Fact]
     public void ActiveReleaseDir_UsesReleaseWhenCurrentTxtPresent_ElseFallsBackToSite()
     {
-        var root = Path.Combine(Path.GetTempPath(), "legadosci-test-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "ponteci-test-" + Guid.NewGuid().ToString("N"));
         try
         {
             var envBase = Path.Combine(root, "envs", "develop");

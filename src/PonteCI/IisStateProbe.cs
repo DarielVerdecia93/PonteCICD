@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 /// <summary>
 /// Real IIS site/pool state for the panel and the poller, read from engine\sitestate.ps1.
@@ -21,12 +21,19 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
     readonly object _lock = new();
     Dictionary<string, bool> _running = new(StringComparer.OrdinalIgnoreCase);
     bool _iisAvailable;
+    string? _error;
     DateTimeOffset _at = DateTimeOffset.MinValue;
 
     /// <summary>True when IIS could be queried on the last probe (pool/site state is meaningful).</summary>
     public bool IisAvailable
     {
         get { Refresh(); lock (_lock) return _iisAvailable; }
+    }
+
+    /// <summary>Why the last probe failed (null when it worked), e.g. the process is not elevated.</summary>
+    public string? Error
+    {
+        get { Refresh(); lock (_lock) return _error; }
     }
 
     /// <summary>Whether the env's IIS app pool and website are both Started (false when IIS is unavailable).</summary>
@@ -46,9 +53,10 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
 
         var running = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         var available = false;
+        string? error = null;
         try
         {
-            var states = Run<List<EnvState>>("-All");
+            var states = Run<List<EnvState>>("-All", out error);
             if (states is not null)
             {
                 available = true;
@@ -57,13 +65,17 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
         }
         catch (Exception ex)
         {
-            log.LogDebug(ex, "sitestate -All falhou; o IIS e tratado como nao disponivel");
+            error = ex.Message;
         }
 
         lock (_lock)
         {
+            // Log only on a change, so a persistent failure doesn't flood the log every 3 s.
+            if (error != _error && error is not null)
+                log.LogWarning("Nao foi possivel consultar o estado do IIS: {Error}", error);
             _running = running;
             _iisAvailable = available;
+            _error = error;
         }
     }
 
@@ -72,7 +84,7 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
     {
         try
         {
-            var p = Run<PreflightResult>("-Preflight");
+            var p = Run<PreflightResult>("-Preflight", out _);
             return p?.IisAvailable == true;
         }
         catch (Exception ex)
@@ -82,8 +94,9 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
         }
     }
 
-    T? Run<T>(string arg) where T : class
+    T? Run<T>(string arg, out string? error) where T : class
     {
+        error = null;
         var psi = new ProcessStartInfo("powershell.exe")
         {
             RedirectStandardOutput = true,
@@ -98,13 +111,21 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
             psi.ArgumentList.Add(a);
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Nao foi possivel iniciar o powershell.exe.");
-        var stdout = proc.StandardOutput.ReadToEnd();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
         if (!proc.WaitForExit((int)RunTimeout.TotalMilliseconds))
         {
             try { proc.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            error = $"tempo esgotado ({RunTimeout.TotalSeconds:0} s) a consultar o IIS";
             return null;
         }
-        if (proc.ExitCode != 0 || string.IsNullOrWhiteSpace(stdout)) return null;
+        var stdout = stdoutTask.Result;
+        if (proc.ExitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+        {
+            var err = stderrTask.Result.Trim();
+            error = err.Length > 0 ? err.Split('\n')[0].Trim() : $"sitestate.ps1 terminou com o codigo {proc.ExitCode}";
+            return null;
+        }
         return JsonSerializer.Deserialize<T>(stdout, CiStore.Json);
     }
 }

@@ -1,13 +1,13 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using LegadosCI;
+using PonteCI;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = AppContext.BaseDirectory,
 });
-builder.Host.UseWindowsService(o => o.ServiceName = "LegadosCI");
+builder.Host.UseWindowsService(o => o.ServiceName = "PonteCI");
 
 // Por defecto la raiz del CI es la carpeta del repo Legados-CI (la que contiene engine\deploy.ps1 y ci.json).
 // Se busca subiendo desde el exe, asi funciona igual con dotnet run (bin\Debug\...) y con el publicado (service\).
@@ -77,8 +77,18 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisSta
         cfg.QuietSec,
         cfg.LocalRepoPath,
         IisAvailable = probe.IisAvailable,
+        IisError = probe.Error,
         Environments = envs,
     };
+});
+
+api.MapPut("/settings", (SettingsRequest req, Notifier notifier) =>
+{
+    if (req.PollIntervalSec is null or < Poller.MinPollSec or > 3600)
+        return Results.BadRequest($"O intervalo deve estar entre {Poller.MinPollSec} e 3600 segundos.");
+    store.Update(c => c.PollIntervalSec = req.PollIntervalSec.Value);
+    notifier.Changed();
+    return Results.Ok();
 });
 
 api.MapGet("/branches", (Mirror mirror) => mirror.Branches);
@@ -119,7 +129,7 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     if (!string.IsNullOrWhiteSpace(req.CopyFrom))
     {
         template = cfg0.Environments.FirstOrDefault(e => e.Name == req.CopyFrom);
-        if (template is null) return Results.BadRequest($"O ambiente de origem '{req.CopyFrom}' nao existe.");
+        if (template is null) return Results.BadRequest($"O ambiente de origem '{req.CopyFrom}' não existe.");
     }
 
     var branch = req.Branch ?? template?.Branch;
@@ -139,13 +149,13 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     {
         if (c.Environments.Any(e => e.Name == name)) { error = $"Ja existe o ambiente '{name}'."; return; }
         var port = req.Port ?? Enumerable.Range(8090, 200).First(p => c.Environments.All(e => e.Port != p) && PortProbe.IsFree(p));
-        if (c.Environments.Any(e => e.Port == port)) { error = $"A porta {port} ja esta a ser usada por outro ambiente."; return; }
+        if (c.Environments.Any(e => e.Port == port)) { error = $"A porta {port} já está a ser usada por outro ambiente."; return; }
 
         var siteName = CiStore.DefaultSiteName(name);
         if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.SiteName) ? CiStore.DefaultSiteName(e.Name) : e.SiteName) == siteName))
-        { error = $"O site IIS '{siteName}' ja esta a ser usado por outro ambiente."; return; }
+        { error = $"O site IIS '{siteName}' já está a ser usado por outro ambiente."; return; }
         if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.AppPoolName) ? CiStore.DefaultSiteName(e.Name) : e.AppPoolName) == siteName))
-        { error = $"O pool IIS '{siteName}' ja esta a ser usado por outro ambiente."; return; }
+        { error = $"O pool IIS '{siteName}' já está a ser usado por outro ambiente."; return; }
 
         c.Environments.Add(new EnvConfig
         {
@@ -190,7 +200,7 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
         var curPool = string.IsNullOrWhiteSpace(current.AppPoolName) ? CiStore.DefaultSiteName(current.Name) : current.AppPoolName;
         if ((req.SiteName is not null && req.SiteName.Trim() != curSite) ||
             (req.AppPoolName is not null && req.AppPoolName.Trim() != curPool))
-            return Results.BadRequest("O nome do site/pool do IIS nao pode ser alterado depois de criado.");
+            return Results.BadRequest("O nome do site/pool do IIS não pode ser alterado depois de criado.");
     }
 
     EnvConfig? env = null;
@@ -214,7 +224,7 @@ api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
             var port = req.Port.Value;
             if (port is < 1 or > 65535) { error = $"Porta invalida: {port}."; return; }
             if (c.Environments.Any(e => e.Name != name && e.Port == port))
-            { error = $"A porta {port} ja esta a ser usada por outro ambiente."; return; }
+            { error = $"A porta {port} já está a ser usada por outro ambiente."; return; }
             env.Port = port;
         }
         env.Branch = branch;
@@ -236,7 +246,7 @@ api.MapPost("/envs/{name}/{action}", (string name, string action, string? arg, J
     if (!EnvExists(name)) return Results.NotFound();
     if (!Enum.TryParse<JobKind>(action, ignoreCase: true, out var kind) || kind == JobKind.Purge)
         return Results.BadRequest($"Acao desconhecida: {action}");
-    if (queue.HasPending(name)) return Results.Conflict($"Ja existe uma operacao em curso para {name}.");
+    if (queue.HasPending(name)) return Results.Conflict($"Já existe uma operação em curso para {name}.");
     return Results.Ok(queue.Enqueue(name, kind, "manual", arg));
 });
 
@@ -278,6 +288,8 @@ static bool IsElevated()
         return false;
     }
 }
+
+record SettingsRequest(int? PollIntervalSec);
 
 record EnvRequest(
     string? Name, string? Branch, string? Source, int? Port, string? Configuration, bool? AutoDeploy,

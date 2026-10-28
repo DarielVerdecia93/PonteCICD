@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 public sealed class CiConfig
 {

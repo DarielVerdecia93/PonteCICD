@@ -1,0 +1,56 @@
+name: Release
+
+# Al empujar una etiqueta vX.Y.Z se compila el servicio, se genera el instalador y se publica el release.
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Versión
+        id: ver
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0-dev' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Tests
+        run: dotnet test tests/PonteCI.Tests -c Release
+
+      - name: Publicar servicio (autocontenido)
+        run: >
+          dotnet publish src/PonteCI -c Release -r win-x64 --self-contained
+          -p:Version=${{ steps.ver.outputs.version }} -o artifacts/service
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compilar instalador
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\PonteCI.iss'
+
+      - name: Publicar release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/PonteCI-Setup-${{ steps.ver.outputs.version }}.exe
+          generate_release_notes: true
+
+      - name: Guardar instalador (ejecución manual)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PonteCI-Setup
+          path: artifacts/*.exe

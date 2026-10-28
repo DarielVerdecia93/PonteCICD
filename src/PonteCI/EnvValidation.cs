@@ -1,4 +1,4 @@
-namespace LegadosCI;
+namespace PonteCI;
 
 /// <summary>
 /// Pure validation helpers for the environment API, kept free of the web host so they can be unit tested.
@@ -19,7 +19,7 @@ public static class EnvValidation
 
         var segments = path.Split('\\', '/');
         if (segments.Any(s => s == ".."))
-            return (false, "A pasta do site nao pode conter '..'.");
+            return (false, "A pasta do site não pode conter '..'.");
 
         var normalized = Normalize(path);
         foreach (var other in others)
@@ -40,7 +40,7 @@ public static class EnvValidation
         if (port < 1 || port > 65535)
             return (false, "A porta deve estar entre 1 e 65535.");
         if (others.Any(e => e.Port == port))
-            return (false, $"A porta {port} ja esta em uso por outro ambiente.");
+            return (false, $"A porta {port} já está em uso por outro ambiente.");
         return (true, null);
     }
 

@@ -16,7 +16,7 @@ try {
     if (-not $hasModule) {
         throw 'IIS nao instalado: ative o papel IIS (Web-Server, Web-Mgmt-Console, Web-Scripting-Tools) e reinicie.'
     } elseif (-not $isAdmin) {
-        throw 'LegadosCI nao e executado como administrador: a gestao do IIS requer elevacao. Instale/inicie o servico com uma conta do grupo Administradores (consulte install-service.ps1) ou execute o painel como administrador.'
+        throw 'PonteCI nao e executado como administrador: a gestao do IIS requer elevacao. Instale/inicie o servico com uma conta do grupo Administradores (consulte install-service.ps1) ou execute o painel como administrador.'
     } else {
         throw "Nao foi possivel aceder a configuracao do IIS: $($_.Exception.Message)"
     }
@@ -405,18 +405,18 @@ function Stop-Site {
     Write-Ok "Site IIS '$script:SiteName' parado."
 }
 
-# Elimina sitio + pool de IIS, solo cuando los nombres son de LegadosCI (nunca sitios externos).
+# Elimina sitio + pool de IIS, solo cuando los nombres son de PonteCI (nunca sitios externos).
 function Remove-Site {
     Stop-Site
     if ($script:SiteName -like 'LegadosCI-*') {
         if (Test-Path "IIS:\Sites\$script:SiteName") { Remove-Website -Name $script:SiteName }
     } else {
-        Write-Warn "O site '$script:SiteName' nao foi criado pelo LegadosCI; nao e removido do IIS."
+        Write-Warn "O site '$script:SiteName' nao foi criado pelo PonteCI; nao e removido do IIS."
     }
     if ($script:PoolName -like 'LegadosCI-*') {
         if (Test-Path "IIS:\AppPools\$script:PoolName") { Remove-WebAppPool -Name $script:PoolName }
     } else {
-        Write-Warn "O app pool '$script:PoolName' nao foi criado pelo LegadosCI; nao e removido do IIS."
+        Write-Warn "O app pool '$script:PoolName' nao foi criado pelo PonteCI; nao e removido do IIS."
     }
 }
 
