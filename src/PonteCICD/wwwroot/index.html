@@ -190,8 +190,9 @@
   .foot-grid .f-name { grid-column: span 3; }
   .foot-grid .f-cfg { grid-column: span 3; }
   .foot-grid .f-path { grid-column: 1 / -1; }
+  .foot-grid .f-host { grid-column: span 4; }
   .foot-grid .f-port { grid-column: span 2; }
-  .foot-grid .f-auto { grid-column: span 4; flex-direction: row; align-items: center; gap: 8px; padding-bottom: 6px; }
+  .foot-grid .f-auto { grid-column: span 6; flex-direction: row; align-items: center; gap: 8px; padding-bottom: 6px; }
   .foot-grid .hint { font-size: 11px; color: var(--faint); }
   .foot-grid [hidden] { display: none; }
   .foot-actions { display: flex; justify-content: flex-end; gap: 10px; }
@@ -307,6 +308,9 @@
         </label>
         <label class="f f-path" title="vazio = gerido automaticamente em envs\&lt;nome&gt;; o site real fica em &lt;base&gt;\releases\&lt;versao&gt;">Pasta base do ambiente (IIS) <span class="hint">opcional</span>
           <input name="sitePath" placeholder="ex.: C:\inetpub\wwwroot\deploys\develop" autocomplete="off">
+        </label>
+        <label class="f f-host" title="Opcional. O site passa a responder também em http://nome/ (porto 80, sem mostrar o porto do ambiente). O nome tem de existir no DNS (ou no ficheiro hosts) e apontar para este servidor.">Nome DNS <span class="hint" style="display:inline">(opcional)</span>
+          <input name="hostHeader" placeholder="ex.: sitio.teste.br" autocomplete="off" autocapitalize="off" spellcheck="false">
         </label>
         <label class="f f-port" title="Porta HTTP onde o IIS serve o site deste ambiente">Porta
           <input name="port" type="number" min="1" max="65535" inputmode="numeric" placeholder="auto">
@@ -502,7 +506,7 @@ function renderEnv(e) {
         ${!h ? '<span class="tag warn">a branch já não existe</span>' : upToDate ? '<span class="tag">atualizado</span>' : d ? '<span class="tag warn">desatualizado</span>' : ''}
       </div>
       <div class="rows">
-        <span>URL</span><span><a href="${esc(e.url)}" target="_blank">${esc(e.url)}</a></span>
+        <span>URL</span><span><a href="${esc(e.url)}" target="_blank">${esc(e.url)}</a>${e.hostHeader ? ` <span class="muted">· por porto: <a href="${esc(e.localUrl)}" target="_blank">${esc(e.localUrl)}</a></span>` : ''}</span>
         <span>Implantado</span><span>${d ? `<code>${esc(d.shortCommit)}</code> ${esc(d.subject)} <span class="muted">· ${ago(d.deployedAt)}</span>` : '<span class="muted">nada ainda</span>'}</span>
         <span>Último commit</span><span>${h ? `<code>${short(h.commit)}</code> ${esc(h.subject)} <span class="muted">· ${esc(h.author)} · ${ago(h.date)}</span>` : '—'}</span>
       </div>
@@ -695,6 +699,7 @@ async function openPicker(env = null, mode = env ? 'edit' : 'new') {
   f.sitePath.value = mode === 'copy' ? (env?.sitePath || '') : '';
   // Puerto: al editar muestra el actual; al crear/duplicar vacio = autoasignado (duplicar NO copia el puerto).
   f.port.value = mode === 'edit' ? (env?.port ?? '') : '';
+  f.hostHeader.value = mode === 'edit' ? (env?.hostHeader || '') : '';
   f.autoDeploy.checked = env ? env.autoDeploy : true;
   f.configuration.innerHTML = `<option>${esc(env?.configuration || 'Desenvolvimento')}</option>`;
   $('#pickerErr').textContent = '';
@@ -773,6 +778,7 @@ $('#pickerForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   const f = ev.target, sel = picker.selected;
   const sitePath = f.sitePath.value.trim() || undefined;
+  const hostHeader = f.hostHeader.value.trim().toLowerCase();
   const portVal = f.port.value.trim();
   const port = portVal === '' ? undefined : parseInt(portVal, 10);
   if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) {
@@ -781,9 +787,10 @@ $('#pickerForm').addEventListener('submit', async ev => {
   try {
     if (picker.mode === 'edit') {
       const env = picker.env, configuration = f.configuration.value;
-      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration, sitePath, port });
+      await api('PUT', `/api/envs/${env.name}`, { branch: sel.name, source: sel.source, configuration, sitePath, port, hostHeader });
       const changed = sel.name !== env.branch || sel.source !== env.source
-        || configuration !== env.configuration || (port !== undefined && port !== env.port);
+        || configuration !== env.configuration || (port !== undefined && port !== env.port)
+        || hostHeader !== (env.hostHeader || '');
       // Uma nova branch, configuração ou porta só surte efeito após recompilar/recriar binding, por isso reimplanta já.
       if (changed && !env.job) await api('POST', `/api/envs/${env.name}/deploy`);
       toast(`<b>${esc(env.name)}</b>: <code>${esc(sel.name)}</code> · ${esc(configuration)}${port !== undefined ? ' · porta ' + port : ''}${changed ? ' · a reimplantar…' : ''}`);
@@ -791,7 +798,7 @@ $('#pickerForm').addEventListener('submit', async ev => {
       const name = f.name.value.trim() || slug(sel.name);
       await api('POST', '/api/envs', {
         name, branch: sel.name, source: sel.source, configuration: f.configuration.value, autoDeploy: f.autoDeploy.checked,
-        sitePath, port, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
+        sitePath, port, hostHeader, copyFrom: picker.mode === 'copy' ? picker.env.name : null,
       });
       toast(`Ambiente <b>${esc(name)}</b> criado (${esc(f.configuration.value)})${port !== undefined ? ' · porta ' + port : ''}: a implantar <code>${esc(sel.name)}</code>…`);
     }

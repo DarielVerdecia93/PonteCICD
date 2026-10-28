@@ -253,32 +253,59 @@ function Remove-ReleaseTree([string]$Release) {
     Remove-Item -LiteralPath $Release -Recurse -Force
 }
 
-# Asegura que el sitio tenga EXACTAMENTE la binding http *:<port>:<hostheader> configurada:
-# anade la correcta si falta y elimina las http sobrantes (p. ej. de un puerto anterior tras cambiarlo).
+# Asegura los bindings http del sitio. Son, como maximo, dos:
+#   - *:<port>:            (siempre) acceso por el puerto del ambiente; lo usan la comprobacion de salud y localhost;
+#   - *:80:<hostheader>    (solo si el ambiente tiene nombre DNS) acceso por http://<nombre>/ sin puerto.
+# Anade los que falten y elimina los http sobrantes (p. ej. de un puerto o nombre anteriores).
 # Trata *, 0.0.0.0 y la IP ausente como equivalentes.
 function Ensure-Binding {
     $wildcards = @('*', '0.0.0.0', '')
-    $existing = @(Get-WebBinding -Name $script:SiteName -Protocol http -ErrorAction SilentlyContinue)
-    $hasCorrect = $false
-    foreach ($b in $existing) {
+    $desired = @(@{ Port = [int]$EnvCfg.port; Host = '' })
+    if ($script:HostHeader) { $desired += @{ Port = 80; Host = $script:HostHeader } }
+
+    function Split-Binding($b) {
         $parts = ($b.bindingInformation -split ':', 3)
-        $ip = if ($parts.Count -ge 1) { $parts[0] } else { '' }
-        $port = if ($parts.Count -ge 2) { $parts[1] } else { '' }
-        $bhost = if ($parts.Count -ge 3) { $parts[2] } else { '' }
-        if (($wildcards -contains $ip) -and ($port -eq "$($EnvCfg.port)") -and ($bhost -eq $script:HostHeader)) {
-            $hasCorrect = $true
+        [pscustomobject]@{
+            Ip   = if ($parts.Count -ge 1) { $parts[0] } else { '' }
+            Port = if ($parts.Count -ge 2) { $parts[1] } else { '' }
+            Host = if ($parts.Count -ge 3) { $parts[2] } else { '' }
         }
     }
-    if (-not $hasCorrect) {
-        New-WebBinding -Name $script:SiteName -Protocol http -Port $EnvCfg.port -HostHeader $script:HostHeader | Out-Null
-    }
-    # Eliminar bindings http de puertos que ya no corresponden (deja solo el configurado).
+
+    # 1) eliminar los http que ya no corresponden
     foreach ($b in @(Get-WebBinding -Name $script:SiteName -Protocol http -ErrorAction SilentlyContinue)) {
-        $parts = ($b.bindingInformation -split ':', 3)
-        $port = if ($parts.Count -ge 2) { $parts[1] } else { '' }
-        $bhost = if ($parts.Count -ge 3) { $parts[2] } else { '' }
-        if ($port -ne "$($EnvCfg.port)" -or $bhost -ne $script:HostHeader) {
-            Remove-WebBinding -Name $script:SiteName -Protocol http -Port ([int]$port) -HostHeader $bhost -ErrorAction SilentlyContinue
+        $x = Split-Binding $b
+        $keep = $false
+        foreach ($d in $desired) {
+            if (($wildcards -contains $x.Ip) -and ($x.Port -eq "$($d.Port)") -and ($x.Host -ieq $d.Host)) { $keep = $true }
+        }
+        if (-not $keep) {
+            Remove-WebBinding -Name $script:SiteName -Protocol http -Port ([int]$x.Port) -HostHeader $x.Host -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 2) anadir los que faltan
+    $present = @(Get-WebBinding -Name $script:SiteName -Protocol http -ErrorAction SilentlyContinue | ForEach-Object { Split-Binding $_ })
+    foreach ($d in $desired) {
+        $has = @($present | Where-Object { ($wildcards -contains $_.Ip) -and $_.Port -eq "$($d.Port)" -and $_.Host -ieq $d.Host }).Count -gt 0
+        if ($has) { continue }
+        # IIS acepta bindings duplicados entre sitios y solo falla al arrancar: comprobar antes si el nombre ya es de otro sitio.
+        if ($d.Host) {
+            $clash = @(Get-WebBinding -Protocol http -ErrorAction SilentlyContinue | Where-Object {
+                $_.bindingInformation -ieq "*:$($d.Port):$($d.Host)" -and $_.ItemXPath -notmatch ("@name='" + [regex]::Escape($script:SiteName) + "'") })
+            if ($clash.Count -gt 0) {
+                $other = if ($clash[0].ItemXPath -match "@name='([^']+)'") { $Matches[1] } else { 'outro' }
+                Write-Warn "O nome '$($d.Host)' (porto 80) ja esta associado ao site IIS '$other'; nao foi ativado - o site continua a responder no porto $($EnvCfg.port)."
+                continue
+            }
+        }
+        try {
+            if ($d.Host) { New-WebBinding -Name $script:SiteName -Protocol http -Port $d.Port -HostHeader $d.Host -ErrorAction Stop | Out-Null }
+            else { New-WebBinding -Name $script:SiteName -Protocol http -Port $d.Port -ErrorAction Stop | Out-Null }
+            if ($d.Host) { Write-Ok "Nome DNS ativo: http://$($d.Host)/ (alem do porto $($EnvCfg.port))." }
+        } catch {
+            if ($d.Host) { Write-Warn "Nao foi possivel associar o nome '$($d.Host)' (porto 80): $($_.Exception.Message) - o site continua a responder no porto $($EnvCfg.port)." }
+            else { throw }
         }
     }
 }
@@ -313,19 +340,14 @@ function Ensure-Site {
     # 4) sitio + binding (requiere un physicalPath existente: la release activa o _bootstrap)
     $physical = Get-ActiveReleasePath
     if (-not (Test-Path "IIS:\Sites\$script:SiteName")) {
-        if ($script:HostHeader) {
-            New-Website -Name $script:SiteName -PhysicalPath $physical -ApplicationPool $script:PoolName `
-                -Port $EnvCfg.port -HostHeader $script:HostHeader -Force | Out-Null
-        } else {
-            # Host header vacio: se OMITE el parametro para que el binding serialice a "*:<port>:".
-            New-Website -Name $script:SiteName -PhysicalPath $physical -ApplicationPool $script:PoolName `
-                -Port $EnvCfg.port -Force | Out-Null
-        }
+        # El sitio nace solo con el binding del puerto (host header vacio: "*:<port>:"); el nombre DNS lo anade Ensure-Binding.
+        New-Website -Name $script:SiteName -PhysicalPath $physical -ApplicationPool $script:PoolName `
+            -Port $EnvCfg.port -Force | Out-Null
     } else {
         Set-ItemProperty "IIS:\Sites\$script:SiteName" -Name applicationPool -Value $script:PoolName
         Set-ItemProperty "IIS:\Sites\$script:SiteName" -Name physicalPath    -Value $physical
-        Ensure-Binding
     }
+    Ensure-Binding
 
     # 5) Application Initialization (sin cortes): preloadEnabled en la app raiz (path '/'), no en applicationDefaults.
     try {
