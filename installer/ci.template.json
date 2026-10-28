@@ -4,7 +4,9 @@
   "projectFile": "",
   "packagesSource": "",
   "msbuild": "",
-  "excludeFromPublish": [],
+  "excludeFromPublish": [
+    "DBScripts"
+  ],
   "includeInPublish": [],
   "preserve": [
     "UploadFiles"

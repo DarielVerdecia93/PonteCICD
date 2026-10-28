@@ -71,14 +71,23 @@ try {
     Write-Step "A compilar e publicar ($($EnvCfg.configuration))"
     $stage = Join-Path $WorkDir 'stage'
     Clear-Directory $stage
+    # Copia intermedia del paquete (PackageTmp) fuera del proyecto: por defecto va en <proyecto>\obj\<config>\Package\PackageTmp
+    # y, con todo ese prefijo, los ficheros de carpetas profundas del repo pasan de 260 caracteres ("O caminho especificado,
+    # o nome do arquivo ou ambos sao muito longos").
+    $pkgTemp = Join-Path $WorkDir 'pkg'
+    Clear-Directory $pkgTemp
+    $excludeRules = @(Get-PublishExcludeRules)
+    $excludeFile = Join-Path $WorkDir 'publish-exclude.regex'
+    [IO.File]::WriteAllText($excludeFile, (Get-PublishExcludeRegex $excludeRules), (New-Object System.Text.UTF8Encoding $false))
+    if ($excludeRules.Count) { Write-Ok "Excluido da publicacao: $($excludeRules -join ', ')" }
     $buildLog = Join-Path $WorkDir 'build.log'
     # /t:WebPublish publica solo el proyecto web (las referencias solo se compilan).
     & $msbuild (Join-Path $srcRoot $Cfg.projectFile) /nologo /m /v:minimal /clp:ErrorsOnly `
         "/flp:LogFile=$buildLog;Verbosity=normal;Encoding=UTF-8" `
         /t:WebPublish /p:Configuration=$($EnvCfg.configuration) /p:Platform=AnyCPU `
-        /p:WebPublishMethod=FileSystem /p:PublishUrl="$stage" /p:DeleteExistingFiles=true `
+        /p:WebPublishMethod=FileSystem /p:PublishUrl="$stage" /p:DeleteExistingFiles=true /p:PackageTempRootDir="$pkgTemp" `
         /p:CustomAfterMicrosoftCommonTargets="$(Join-Path $PSScriptRoot 'publish.targets')" `
-        /p:DeployExcludeFolders="$(@($Cfg.excludeFromPublish) -join '%3B')" `
+        /p:DeployExcludeRegexFile="$excludeFile" `
         /p:DeployIncludeFiles="$(@($Cfg.includeInPublish) -join '%3B')" `
         /p:ExcludeApp_Data=false /p:AutoParameterizationWebConfigConnectionStrings=false | Out-Host
     if ($LASTEXITCODE) { throw "A compilacao falhou (codigo $LASTEXITCODE). Log completo: $buildLog. O site nao foi alterado." }
@@ -165,6 +174,7 @@ try {
     Remove-OldReleases
     Remove-OldBackups
     Clear-Directory $stage
+    Clear-Directory $pkgTemp
 
     $from = if ($previous) { $previous.ShortCommit } else { '(vazio)' }
     Write-Step "Implantacao concluida: $from -> $short em $SiteUrl"

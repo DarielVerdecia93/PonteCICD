@@ -24,7 +24,10 @@ Painel: **http://admin-pontecicd/** (ou **http://localhost:5080/**)
 - Cada deploy:
   1. exporta o commit com o próprio git (`read-tree` + `checkout-index`, código limpo, o repo de trabalho não é tocado). Não se usa
      `git archive | tar`: o `tar` do Windows corrompe os nomes de ficheiros com acentos e o MSBuild falhava com «Falha ao copiar o arquivo»;
-  2. compila e publica com MSBuild (`/t:WebPublish`), sem `DBScripts` e com os ficheiros extra de `includeInPublish`;
+  2. compila e publica com MSBuild (`/t:WebPublish`), sem o que as [regras de publicação](#regras-de-publicação-excluir-pastas-e-ficheiros)
+     excluem (ex.: `DBScripts`) e com os ficheiros extra de `includeInPublish`. A cópia intermédia do pacote faz-se em `work\pkg`
+     e não em `obj\<configuração>\Package\PackageTmp` dentro do projeto: com esse prefixo, ficheiros em pastas profundas do repo
+     passavam dos 260 caracteres do Windows («O caminho especificado, o nome do arquivo ou ambos são muito longos»);
   3. aplica o `Web.local.config` (connection string da BD administrada, URLs...);
   4. pára o site, **guarda a versão atual num zip**, substitui os ficheiros e arranca o site;
   5. verifica que responde; se não, **restaura automaticamente** o zip anterior.
@@ -118,6 +121,37 @@ Cada ambiente corre no seu porto (ex.: 4058). Com **Nome DNS** (ex.: `sitio.test
   continua a responder no seu porto.
 - Alterar ou retirar o nome reimplanta o ambiente, para atualizar os enlaces. Só HTTP (para HTTPS é preciso certificado e enlace próprio).
 
+## Regras de publicação (excluir pastas e ficheiros)
+
+Há pastas do projeto que não devem chegar ao site: scripts de base de dados (`DBScripts`), documentação, ficheiros de
+ferramentas... No painel, menu do utilizador → **Regras de publicação**:
+
+- **Aplicar a**: *Todos os ambientes* ou *Só o ambiente &lt;nome&gt;*. As regras de um ambiente somam-se às de todos.
+- Uma regra por linha. São caminhos **relativos ao projeto web** (a pasta do `.csproj`), com `\` ou `/`, sem distinguir
+  maiúsculas. Cada regra exclui a pasta ou o ficheiro **e tudo o que tiver dentro**.
+- Aplicam-se no **próximo deploy** (guardar não reimplanta nada). Ao duplicar um ambiente, as suas regras vão com a cópia.
+
+| Regra | Exclui |
+| --- | --- |
+| `DBScripts` | qualquer pasta (ou ficheiro) `DBScripts`, em qualquer nível |
+| `\DBScripts` ou `/DBScripts` | só a `DBScripts` da raiz do projeto |
+| `DBScripts\!!!!!After Deploy` | só essa subpasta (com `\` no meio, o caminho conta desde a raiz) |
+| `*.sql` | todos os `.sql`, em qualquer pasta |
+| `bin\*.pdb` | os `.pdb` diretamente em `bin` |
+| `Content\**\*.map` | os `.map` em `Content` e em todas as suas subpastas |
+
+`*` = qualquer texto dentro de um nível, `?` = um caracter, `**` = qualquer número de pastas. É a mesma lógica do `.gitignore`:
+um só nome vale em qualquer nível, e uma `\` à frente prende-o à raiz.
+
+- O que é excluído **nem chega a ser copiado** na compilação. Por isso, uma regra também serve para contornar ficheiros com
+  caminhos muito compridos que não fazem falta no site.
+- O painel recusa regras que excluiriam tudo (`*`, `**`) ou o essencial (`bin`, `Web.config`), caminhos absolutos e `..`.
+  Se, ainda assim, uma regra deixar a publicação sem `Web.config`, o deploy pára antes de tocar no site.
+- Os ficheiros de `includeInPublish` publicam-se sempre, mesmo que uma regra os apanhe.
+- No `ci.json` ficam em `excludeFromPublish`: na raiz (todos os ambientes) e em cada ambiente.
+- O log do deploy mostra as regras usadas («Excluido da publicacao: ...») e o `work\build.log` mostra quantos ficheiros saíram
+  («Excluidos del despliegue: N ficheros»).
+
 ## Estrutura
 
 ```
@@ -128,6 +162,8 @@ envs\<ambiente>\site       site implantado (servido pelo IIS)
 envs\<ambiente>\backups    zips <ambiente>_<data>_<commit>_<motivo>.zip
 envs\<ambiente>\Web.local.config   (opcional) transformação própria do ambiente
 mirror.git                 mirror do remoto
+work\                      compilação (ou o workDir do ci.json): src (código exportado), pkg (cópia intermédia do pacote),
+                           stage (publicação), build.log (log completo do MSBuild)
 runs\                      histórico de execuções
 service\                   PonteCICD publicado (serviço do Windows)
 src\PonteCICD              código do serviço (.NET 10)

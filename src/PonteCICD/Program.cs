@@ -136,6 +136,34 @@ api.MapPut("/settings", (SettingsRequest req, Notifier notifier) =>
     return Results.Ok();
 });
 
+// Regras de exclusao da publicacao: as globais (todos os ambientes) e as de cada ambiente. Aplicam-se no deploy seguinte.
+api.MapGet("/publish-rules", () =>
+{
+    var c = store.Load();
+    return new { All = c.ExcludeFromPublish, Environments = c.Environments.ToDictionary(e => e.Name, e => e.ExcludeFromPublish) };
+});
+
+api.MapPut("/publish-rules", (PublishRulesRequest req, Notifier notifier) =>
+{
+    var (ok, all, error) = PublishRules.Validate(req.All);
+    if (!ok) return Results.BadRequest(error);
+    var perEnv = new Dictionary<string, List<string>>();
+    foreach (var (name, rules) in req.Environments ?? new Dictionary<string, List<string?>>())
+    {
+        var (okEnv, list, envError) = PublishRules.Validate(rules);
+        if (!okEnv) return Results.BadRequest($"Ambiente {name}: {envError}");
+        perEnv[name] = list;
+    }
+    store.Update(c =>
+    {
+        c.ExcludeFromPublish = all;
+        foreach (var e in c.Environments)
+            if (perEnv.TryGetValue(e.Name, out var list)) e.ExcludeFromPublish = list;
+    });
+    notifier.Changed();
+    return Results.Ok();
+});
+
 api.MapGet("/project", () =>
 {
     var c = store.Load();
@@ -301,6 +329,7 @@ api.MapPost("/envs", async (EnvRequest req, Mirror mirror, JobQueue queue, Cance
             AutoDeploy = req.AutoDeploy ?? template?.AutoDeploy ?? true,
             SitePath = sitePath,
             HostHeader = hostHeader,
+            ExcludeFromPublish = [.. template?.ExcludeFromPublish ?? []],
         });
     });
     if (error is not null) return Results.Conflict(error);
@@ -448,6 +477,8 @@ static bool IsElevated()
 }
 
 record SettingsRequest(int? PollIntervalSec);
+
+record PublishRulesRequest(List<string?>? All, Dictionary<string, List<string?>>? Environments);
 
 record ProjectRequest(
     string? RepoUrl, string? SolutionFile, string? ProjectFile, string? PackagesSource, string? LocalRepoPath,

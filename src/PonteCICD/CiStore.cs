@@ -9,6 +9,7 @@ public sealed class CiConfig
     public string ProjectFile { get; set; } = "";
     public string PackagesSource { get; set; } = "";
     public string Msbuild { get; set; } = "";
+    /// <summary>Regras de exclusao da publicacao para todos os ambientes (sintaxe em PublishRules).</summary>
     public List<string> ExcludeFromPublish { get; set; } = [];
     public List<string> IncludeInPublish { get; set; } = [];
     public List<string> Preserve { get; set; } = [];
@@ -46,6 +47,8 @@ public sealed class EnvConfig
     public string AppPoolName { get; set; } = "";
     /// <summary>Optional http host header for the IIS binding. Empty = bind on the port only.</summary>
     public string HostHeader { get; set; } = "";
+    /// <summary>Regras de exclusao da publicacao so deste ambiente; somam-se as globais (CiConfig.ExcludeFromPublish).</summary>
+    public List<string> ExcludeFromPublish { get; set; } = [];
 }
 
 /// <summary>Version info the engine writes into each deployed site (deploy-info.json).</summary>

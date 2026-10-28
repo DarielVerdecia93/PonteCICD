@@ -1,23 +1,28 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!--
     Se inyecta en la compilacion con /p:CustomAfterMicrosoftCommonTargets, sin modificar el .csproj.
-    Quita del paquete publicado las carpetas de $(DeployExcludeFolders) (separadas por ';').
+    Quita del paquete publicado los ficheros cuya ruta de destino cumple las reglas de excludeFromPublish.
+    deploy.ps1 las convierte (Get-PublishExcludeRegex) en una expresion regular y la deja en $(DeployExcludeRegexFile):
+    en un fichero y no en /p: porque la expresion lleva caracteres que MSBuild y la linea de comandos interpretan.
+    Corre antes de copiar al PackageTmp, asi que lo excluido ni siquiera se copia (rutas largas incluidas).
   -->
-  <Target Name="DeployExcludeFolders" BeforeTargets="CopyAllFilesToSingleFolderForAspNetCompileMerge;CopyAllFilesToSingleFolderForPackage" Condition="'$(DeployExcludeFolders)' != ''">
+  <Target Name="DeployExcludeRules" BeforeTargets="CopyAllFilesToSingleFolderForAspNetCompileMerge;CopyAllFilesToSingleFolderForPackage" Condition="'$(DeployExcludeRegexFile)' != '' And Exists('$(DeployExcludeRegexFile)')">
     <PropertyGroup>
-      <_DeployExcludeRegex>(?i)^($(DeployExcludeFolders.Replace(';', '|')))\\</_DeployExcludeRegex>
+      <_DeployExcludeRegex>$([System.IO.File]::ReadAllText('$(DeployExcludeRegexFile)').Trim())</_DeployExcludeRegex>
     </PropertyGroup>
-    <ItemGroup>
+    <!-- Argumentos entre ` y no entre ': un fichero publicado con ' en la ruta (O'Brien\...) romperia la condicion. -->
+    <ItemGroup Condition="'$(_DeployExcludeRegex)' != ''">
       <_DeployExcludedFile Include="@(FilesForPackagingFromProject)"
-                           Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(FilesForPackagingFromProject.DestinationRelativePath)', '$(_DeployExcludeRegex)'))" />
+                           Condition="$([System.Text.RegularExpressions.Regex]::IsMatch(`%(FilesForPackagingFromProject.DestinationRelativePath)`, `$(_DeployExcludeRegex)`))" />
       <FilesForPackagingFromProject Remove="@(_DeployExcludedFile)" />
     </ItemGroup>
-    <Message Importance="high" Text="Excluidos del despliegue: @(_DeployExcludedFile->Count()) ficheros de $(DeployExcludeFolders)" />
+    <Message Importance="high" Condition="'$(_DeployExcludeRegex)' != ''" Text="Excluidos del despliegue: @(_DeployExcludedFile->Count()) ficheros" />
   </Target>
 
   <!--
     Anade al paquete ficheros que el proyecto no publica pero que la app necesita en runtime
     (p. ej. ficheros referenciados desde App_GlobalResources). $(DeployIncludeFiles): rutas/globs relativas al proyecto.
+    Va despues de DeployExcludeRules: un fichero incluido aqui se publica aunque una regla de exclusion lo cubra.
   -->
   <Target Name="DeployIncludeFiles" BeforeTargets="CopyAllFilesToSingleFolderForAspNetCompileMerge;CopyAllFilesToSingleFolderForPackage" Condition="'$(DeployIncludeFiles)' != ''">
     <ItemGroup>
