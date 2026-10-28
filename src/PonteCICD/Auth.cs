@@ -224,12 +224,12 @@ public static class AuthEndpoints
                 o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 o.ExpireTimeSpan = TimeSpan.FromHours(12);
                 o.SlidingExpiration = true;
-                // API: respond 401/403 instead of redirecting to a login page. Pages (/v2): the classic panel's login,
-                // which comes back here afterwards (?voltar=).
+                // API: respond 401/403 instead of redirecting to a login page. Panel pages: /login, which comes back
+                // here afterwards (?voltar=).
                 o.Events.OnRedirectToLogin = ctx =>
                 {
                     if (ctx.Request.Path.StartsWithSegments("/api")) ctx.Response.StatusCode = 401;
-                    else ctx.Response.Redirect("/?voltar=" + Uri.EscapeDataString(ctx.Request.Path + ctx.Request.QueryString));
+                    else ctx.Response.Redirect("/login?voltar=" + Uri.EscapeDataString(ctx.Request.Path + ctx.Request.QueryString));
                     return Task.CompletedTask;
                 };
                 o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };

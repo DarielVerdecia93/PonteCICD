@@ -37,9 +37,9 @@
                 <MudMenuItem Icon="@Icons.Material.Outlined.SettingsBackupRestore" Disabled="@(Busy || Env.Backups.Count == 0)" OnClick="RestoreAsync">
                     Restaurar backup…
                 </MudMenuItem>
-                @* Ainda nao migrados: abrem o painel classico. *@
-                <MudMenuItem Icon="@Icons.Material.Outlined.Edit" Href="/">Editar branch ou configuração</MudMenuItem>
-                <MudMenuItem Icon="@Icons.Material.Outlined.ContentCopy" Href="/">Duplicar ambiente</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => OpenEnvDialogAsync(EnvDialogMode.Edit)">Editar branch ou configuração</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.ContentCopy" OnClick="() => OpenEnvDialogAsync(EnvDialogMode.Copy)"
+                             title="Criar um ambiente novo com a mesma branch, configuração e Web.local.config">Duplicar ambiente</MudMenuItem>
                 <MudDivider />
                 <MudMenuItem Icon="@Icons.Material.Outlined.Delete" IconColor="Color.Error" Disabled="Busy" OnClick="DeleteAsync">Eliminar ambiente</MudMenuItem>
             </MudMenu>
@@ -126,6 +126,8 @@
 
 @code {
     [Parameter, EditorRequired] public EnvState Env { get; set; } = default!;
+    /// <summary>The whole panel (the branch dialog shows which environment already uses each branch).</summary>
+    [Parameter, EditorRequired] public PanelState State { get; set; } = default!;
     /// <summary>Something was queued or changed: the page reloads the state.</summary>
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public EventCallback<string> ShowLog { get; set; }
@@ -140,8 +142,8 @@
     async Task RunAsync(JobKind kind, string? arg = null)
     {
         var r = Panel.Enqueue(Env.Name, kind, arg);
-        if (r.NotFound) Snackbar.Add($"O ambiente {Env.Name} já não existe.", Severity.Warning);
-        else if (r.Conflict is not null) Snackbar.Add(r.Conflict, Severity.Error);
+        if (r.Error == OpError.NotFound) Snackbar.Add($"O ambiente {Env.Name} já não existe.", Severity.Warning);
+        else if (!r.Ok) Snackbar.Add(r.Message ?? "", Severity.Error);
         await Changed.InvokeAsync();
     }
 
@@ -159,6 +161,12 @@
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
         var dialog = await Dialogs.ShowAsync<RestoreDialog>($"Restaurar backup · {Env.Name}", parameters, options);
         if (await dialog.Result is { Canceled: false, Data: string backup }) await RunAsync(JobKind.Rollback, backup);
+    }
+
+    async Task OpenEnvDialogAsync(EnvDialogMode mode)
+    {
+        if (_menu is not null) await _menu.CloseMenuAsync();
+        if (await EnvDialog.ShowAsync(Dialogs, State, Env, mode)) await Changed.InvokeAsync();
     }
 
     async Task DeleteAsync()

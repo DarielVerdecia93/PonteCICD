@@ -1,7 +1,19 @@
-// Ajudas do painel Blazor (/v2).
+// Ajudas do painel (Blazor).
 window.ponte = {
-  // A cookie de sessao e HttpOnly: so o servidor a apaga. Depois volta ao login do painel classico.
-  logout: () => fetch('/api/auth/logout', { method: 'POST' }).finally(() => { location.href = '/'; }),
+  // Pedido a API feito pelo navegador: o login, a configuracao inicial e a troca de palavra-passe criam a cookie
+  // de sessao (HttpOnly), e isso so acontece numa resposta HTTP ao navegador, nao pela ligacao do Blazor.
+  send: async (method, url, body) => {
+    try {
+      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
+      let text = await r.text();
+      if (text.startsWith('"')) { try { text = JSON.parse(text); } catch { /* texto simples */ } }
+      return { ok: r.ok, status: r.status, text: r.ok ? '' : (text || r.statusText) };
+    } catch {
+      return { ok: false, status: 0, text: 'Sem ligação ao serviço.' };
+    }
+  },
+  // A cookie de sessao e HttpOnly: so o servidor a apaga.
+  logout: () => fetch('/api/auth/logout', { method: 'POST' }).finally(() => { location.href = '/login'; }),
   atBottom: id => {
     const el = document.getElementById(id);
     return !el || el.scrollTop + el.clientHeight >= el.scrollHeight - 20;

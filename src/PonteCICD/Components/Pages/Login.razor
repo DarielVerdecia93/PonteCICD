@@ -1,0 +1,88 @@
+@page "/login"
+@layout LoginLayout
+@inject UserStore Users
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Entrar · Ponte CI/CD</PageTitle>
+
+<MudPaper Outlined="true" Class="pa-8">
+    <div class="d-flex align-center gap-3 mb-6">
+        <img src="/icon.svg" alt="" width="36" height="36" />
+        <MudText Typo="Typo.h5" Class="marca">Ponte CI/CD</MudText>
+    </div>
+    @if (_setup)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+            <b>Configuração inicial:</b> ainda não existe nenhum administrador. Crie o utilizador com que vai entrar no painel
+            (só é possível a partir deste computador).
+        </MudAlert>
+    }
+    <EditForm Model="this" OnSubmit="SubmitAsync">
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_user" Label="Utilizador" Variant="Variant.Outlined" Immediate="true" AutoFocus="true"
+                          spellcheck="false" autocapitalize="off" />
+            <MudTextField @bind-Value="_password" Label="Palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined"
+                          Immediate="true" HelperText="@(_setup ? $"Mínimo {UserStore.MinPasswordLength} caracteres" : null)" />
+            @if (_setup)
+            {
+                <MudTextField @bind-Value="_again" Label="Repetir a palavra-passe" InputType="InputType.Password"
+                              Variant="Variant.Outlined" Immediate="true" />
+            }
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" role="alert">@_error</MudAlert>
+            }
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                       FullWidth="true" Disabled="_busy">@(_setup ? "Criar administrador e entrar" : "Entrar")</MudButton>
+        </MudStack>
+    </EditForm>
+</MudPaper>
+
+@code {
+    [SupplyParameterFromQuery(Name = "voltar")] public string? Voltar { get; set; }
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+
+    string _user = "", _password = "", _again = "";
+    string? _error;
+    bool _setup, _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Ja com sessao: segue para onde ia.
+        if (AuthState is not null && (await AuthState).User.Identity?.IsAuthenticated == true)
+        {
+            Nav.NavigateTo(Ui.SafeReturnUrl(Voltar), forceLoad: true);
+            return;
+        }
+        // Sem administrador (instalacao sem o instalador, ou users.json apagado): o login passa a configuracao inicial.
+        _setup = !Users.HasUsers;
+    }
+
+    // O pedido sai do navegador para a API (/api/auth/login ou /setup), que valida (bloqueio apos tentativas falhadas,
+    // configuracao inicial so a partir deste computador) e cria a cookie. Depois a pagina recarrega ja com sessao.
+    async Task SubmitAsync()
+    {
+        _error = null;
+        if (_setup && _password != _again) { _error = "As palavras-passe não coincidem."; return; }
+        _busy = true;
+        try
+        {
+            var r = await JS.InvokeAsync<ApiReply>("ponte.send", "POST", _setup ? "/api/auth/setup" : "/api/auth/login",
+                new { username = _user, password = _password });
+            if (r.Ok)
+            {
+                Nav.NavigateTo(Ui.SafeReturnUrl(Voltar), forceLoad: true);
+                return;
+            }
+            _error = r.Text;
+            _password = _again = "";
+            // Entretanto alguem criou o administrador: passa a login normal.
+            if (_setup && r.Status == StatusCodes.Status409Conflict) _setup = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

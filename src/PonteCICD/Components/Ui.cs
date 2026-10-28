@@ -1,12 +1,34 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using MudBlazor;
 
 namespace PonteCICD.Components;
 
-/// <summary>Textos e formatos do painel (os mesmos do painel classico).</summary>
+/// <summary>Resposta de um pedido a API feito pelo navegador (ponte.send): o login e a palavra-passe criam a cookie.</summary>
+public sealed record ApiReply(bool Ok, int Status, string Text);
+
+/// <summary>Textos e formatos do painel (os mesmos do painel antigo).</summary>
 public static class Ui
 {
     static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    /// <summary>
+    /// Para onde voltar depois do login: so caminhos deste site. «//outro», «/\outro» ou um caminho com tabulacoes ou
+    /// mudancas de linha (o navegador tira-as e fica «//outro») levariam a outro servidor.
+    /// </summary>
+    public static string SafeReturnUrl(string? url) =>
+        url is { Length: > 0 } && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'))
+        && !url.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))
+            ? url
+            : "/";
+
+    /// <summary>Nome de ambiente sugerido para uma branch: feature/Nova-Tela -> nova-tela.</summary>
+    public static string Slug(string branch)
+    {
+        var s = Regex.Replace(branch.ToLowerInvariant(), "^(feature|feat|bugfix|fix|chore|hotfix)/", "");
+        s = Regex.Replace(s, "[^a-z0-9]+", "-").Trim('-');
+        return s.Length > 40 ? s[..40] : s;
+    }
 
     public static string Short(string? commit) =>
         string.IsNullOrEmpty(commit) ? "—" : commit.Length > 7 ? commit[..7] : commit;
@@ -60,7 +82,7 @@ public static class Ui
         _ => Color.Default,
     };
 
-    /// <summary>Cores do painel classico (Windows 11 / Fluent), com tema claro e escuro.</summary>
+    /// <summary>Cores do painel antigo (Windows 11 / Fluent), com tema claro e escuro.</summary>
     public static readonly MudTheme Theme = new()
     {
         PaletteLight = new PaletteLight

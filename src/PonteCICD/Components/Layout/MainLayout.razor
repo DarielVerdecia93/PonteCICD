@@ -1,10 +1,8 @@
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
+@inject IDialogService Dialogs
 
-<MudThemeProvider @ref="_theme" Theme="Ui.Theme" @bind-IsDarkMode="_dark" />
-<MudPopoverProvider />
-<MudDialogProvider CloseOnEscapeKey="true" />
-<MudSnackbarProvider />
+<Tema />
 
 <MudLayout>
     <MudAppBar Elevation="0" Class="barra">
@@ -13,8 +11,9 @@
         @* Controlos da pagina aberta (ex.: «ao vivo», «Procurar alteracoes»). *@
         <SectionOutlet SectionName="barra" />
         <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Class="ml-2">
+            @* No MudBlazor 9 o botao proprio tem de abrir o menu (context.ToggleAsync): sozinho nao passa o clique ao menu. *@
             <ActivatorContent>
-                <MudButton Variant="Variant.Text" Color="Color.Inherit" EndIcon="@Icons.Material.Filled.ArrowDropDown">
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" EndIcon="@Icons.Material.Filled.ArrowDropDown" OnClick="@context.ToggleAsync">
                     <MudAvatar Size="Size.Small" Color="Color.Primary" Class="mr-2">@Inicial</MudAvatar>
                     <span class="d-none d-sm-inline">@_user</span>
                 </MudButton>
@@ -25,7 +24,12 @@
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Sessão iniciada</MudText>
                 </div>
                 <MudDivider />
-                <MudMenuItem Icon="@Icons.Material.Outlined.Dashboard" Href="/">Painel clássico</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.Key" OnClick="() => ProjectDialog.ShowAsync(Dialogs)">Acesso ao repositório</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.FilterAlt" OnClick="() => RulesDialog.ShowAsync(Dialogs)">Regras de publicação</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.Schedule" OnClick="() => SettingsDialog.ShowAsync(Dialogs)">Frequência de atualização</MudMenuItem>
+                <MudDivider />
+                <MudMenuItem Icon="@Icons.Material.Outlined.Password" OnClick="() => PasswordDialog.ShowAsync(Dialogs)">Alterar palavra-passe</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.History" Href="/classico/">Painel antigo</MudMenuItem>
                 <MudDivider />
                 <MudMenuItem Icon="@Icons.Material.Outlined.Logout" IconColor="Color.Error" OnClick="LogoutAsync">Terminar sessão</MudMenuItem>
             </ChildContent>
@@ -41,8 +45,6 @@
 @code {
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
 
-    MudThemeProvider? _theme;
-    bool _dark;
     string _user = "";
 
     string Inicial => _user.Length > 0 ? _user[..1].ToUpperInvariant() : "?";
@@ -50,15 +52,6 @@
     protected override async Task OnParametersSetAsync()
     {
         if (AuthState is not null) _user = (await AuthState).User.Identity?.Name ?? "";
-    }
-
-    // Segue o tema do Windows (claro/escuro), tambem quando muda com a pagina aberta.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender || _theme is null) return;
-        _dark = await _theme.GetSystemDarkModeAsync();
-        await _theme.WatchSystemDarkModeAsync(dark => { _dark = dark; return InvokeAsync(StateHasChanged); });
-        StateHasChanged();
     }
 
     Task LogoutAsync() => JS.InvokeVoidAsync("ponte.logout").AsTask();

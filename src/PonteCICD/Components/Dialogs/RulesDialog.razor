@@ -1,0 +1,90 @@
+@inject PanelService Panel
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudSelect T="string" Value="_scope" ValueChanged="ChangeScope" Label="Aplicar a" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("")">Todos os ambientes</MudSelectItem>
+                @foreach (var name in _envs.Keys)
+                {
+                    <MudSelectItem Value="name">Só o ambiente @name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_text" Label="Excluir da publicação (uma regra por linha)" Variant="Variant.Outlined"
+                          Lines="7" Immediate="true" Class="regras" spellcheck="false" autocomplete="off"
+                          Placeholder="@("DBScripts\n*.sql\nContent\\**\\*.map")" />
+            @if (_scope != "" && _all.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Somam-se às de todos os ambientes: @foreach (var r in _all) { <code class="mr-1">@r</code> }
+                </MudText>
+            }
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Caminhos relativos ao projeto web; cada regra exclui a pasta ou ficheiro e tudo o que tiver dentro. Um só nome
+                (<code>DBScripts</code>, <code>*.sql</code>) vale em qualquer nível; com <code>\</code> à frente
+                (<code>\DBScripts</code>), só o da raiz. <code>*</code> = qualquer texto dentro de um nível, <code>?</code> = um
+                caracter, <code>**</code> = qualquer número de pastas.
+            </MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                O que é excluído nem chega a ser copiado na compilação. As alterações aplicam-se no próximo deploy.
+            </MudText>
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance Dialog { get; set; } = default!;
+
+    // Rascunho de todos os ambitos enquanto o dialogo esta aberto: mudar o seletor nao perde o que se escreveu.
+    List<string> _all = [];
+    Dictionary<string, List<string>> _envs = [];
+    string _scope = "";
+    string _text = "";
+    string? _error;
+
+    public static Task ShowAsync(IDialogService dialogs) =>
+        dialogs.ShowAsync<RulesDialog>("Regras de publicação", new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+    protected override void OnInitialized()
+    {
+        var rules = Panel.GetPublishRules();
+        _all = [.. rules.All];
+        _envs = rules.Environments.ToDictionary(e => e.Key, e => e.Value.ToList());
+        _text = string.Join("\n", _all);
+    }
+
+    static List<string> Lines(string text) =>
+        [.. text.Split('\n').Select(s => s.Trim()).Where(s => s.Length > 0)];
+
+    void Keep()
+    {
+        if (_scope == "") _all = Lines(_text);
+        else _envs[_scope] = Lines(_text);
+    }
+
+    void ChangeScope(string scope)
+    {
+        Keep();
+        _scope = scope;
+        _text = string.Join("\n", scope == "" ? _all : _envs.GetValueOrDefault(scope) ?? []);
+    }
+
+    void Save()
+    {
+        Keep();
+        _error = Panel.SavePublishRules(new PublishRulesRequest(
+            [.. _all], _envs.ToDictionary(e => e.Key, e => e.Value.ConvertAll<string?>(r => r))));
+        if (_error is not null) return;
+        Snackbar.Add("Regras de publicação guardadas: aplicam-se no próximo deploy.", Severity.Success);
+        Dialog.Close();
+    }
+}

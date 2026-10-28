@@ -60,7 +60,7 @@ O painel exige início de sessão e **não existe nenhuma conta nem palavra-pass
   Em alternativa, pela linha de comandos (uma consola de administrador): `.\service\PonteCICD.exe --set-admin <utilizador>`
   (pede a palavra-passe sem a mostrar) ou `install-service.ps1 -AdminUser <utilizador> -AdminPasswordFile <ficheiro>`.
 - **Alterar a palavra-passe:** menu do utilizador (canto superior direito) → **Alterar palavra-passe**. O menu também tem
-  *Projeto e acesso ao repositório*, *Frequência de atualização* e *Terminar sessão*.
+  *Acesso ao repositório*, *Regras de publicação*, *Frequência de atualização*, *Painel antigo* e *Terminar sessão*.
 - **Esqueceu-se da palavra-passe:** pare o serviço (`Stop-Service PonteCICD`), execute
   `.\service\PonteCICD.exe --set-admin <utilizador>` e arranque-o de novo. Isto substitui a conta de administrador.
 - A sessão dura 12 h sem atividade. Ao mudar a palavra-passe, as outras sessões abertas terminam.
@@ -70,18 +70,17 @@ O painel exige início de sessão e **não existe nenhuma conta nem palavra-pass
 - Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS (proxy inverso).
 - Instalações de versões anteriores podem ter ainda a conta predefinida antiga: o painel avisa até a palavra-passe ser alterada.
 
-## Painel novo (pré-visualização)
+## Interface do painel
 
-Em **`/v2`** (ex.: `http://admin-pontecicd/v2`; também no menu do utilizador → *Novo painel (pré-visualização)*) está a vista
-principal refeita em **Blazor Server + MudBlazor**, ao lado do painel atual, para a avaliar antes de migrar o resto.
+O painel é feito em **Blazor Server + MudBlazor** e corre dentro do próprio serviço: `/` é o painel e `/login` o início de sessão
+(ou a configuração inicial, enquanto não houver administrador).
 
-- Usa a mesma sessão: sem sessão, abre o login do painel atual e volta a `/v2`. Com a página aberta, a sessão é verificada
-  a cada minuto (uma palavra-passe alterada noutro sítio também a termina aqui).
-- Já tem: ambientes (implantar, iniciar/parar, reiniciar, restaurar backup, eliminar, deploy automático), commits por implantar,
-  execuções e o log ao vivo. Criar, editar e duplicar ambientes, o acesso ao repositório, as regras de publicação, a frequência
-  de atualização e a palavra-passe continuam no painel atual (os botões levam lá).
-- Tema claro/escuro segundo o Windows. Se o serviço reiniciar (ex.: numa atualização), a página mostra
-  «A ligar novamente ao serviço…» e recarrega sozinha quando ele volta.
+- Atualiza-se sozinho: o serviço avisa a página de cada alteração (deploys, branches, IIS), e de qualquer modo ela volta a ler o
+  estado a cada 5 s. Com a página aberta, a sessão é verificada a cada minuto (uma palavra-passe alterada noutro sítio também a termina).
+- Tema claro/escuro segundo o Windows; funciona também no telemóvel.
+- Se o serviço reiniciar (ex.: numa atualização), a página mostra «A ligar novamente ao serviço…» e recarrega sozinha quando ele volta.
+- O **painel antigo** (HTML) continua disponível em **`/classico/`** (menu do utilizador → *Painel antigo*), com a mesma sessão e a
+  mesma API, como alternativa enquanto o novo é validado.
 
 ## Primeira configuração: acesso ao repositório
 

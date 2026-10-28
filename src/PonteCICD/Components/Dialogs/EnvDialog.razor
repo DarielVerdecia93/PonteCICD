@@ -1,0 +1,297 @@
+@implements IDisposable
+@inject Mirror Mirror
+@inject PanelService Panel
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex flex-wrap align-center gap-2">
+            <MudTextField @bind-Value="_query" Placeholder="Procurar branch, autor ou mensagem…" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" Clearable="true" AutoFocus="true" Class="flex-grow-1" spellcheck="false" />
+            @* «Meu repo local» so existe com um repositorio local configurado (localRepoPath no ci.json). *@
+            @if (_hasLocal)
+            {
+                <MudToggleGroup T="string" @bind-Value="_source" Color="Color.Primary" Size="Size.Small" Outlined="true">
+                    <MudToggleItem Value="@BranchSource.Remote" Text="Remoto" />
+                    <MudToggleItem Value="@BranchSource.Local" Text="Meu repo local" />
+                </MudToggleGroup>
+            }
+        </div>
+
+        <div class="ramos mt-2">
+            @{ var groups = Groups(); }
+            @if (groups.Count == 0)
+            {
+                <div class="ramos-vazio">@EmptyMessage</div>
+            }
+            @foreach (var (group, items) in groups)
+            {
+                var open = _query.Trim().Length > 0 || !_closed.Contains(group);
+                <div class="grupo-nome" @onclick="() => Toggle(group)">
+                    <MudIcon Icon="@(open ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" Size="Size.Small" />
+                    @group <span class="sec">(@items.Count)</span>
+                </div>
+                @if (open)
+                {
+                    foreach (var b in items)
+                    {
+                        var selected = _selected is { } s && s.Name == b.Name && s.Source == b.Source;
+                        <div class="@($"ramo {(selected ? "sel" : "")}")" @onclick="() => SelectAsync(b)" @ondblclick="() => PickAsync(b)">
+                            <span class="ramo-nome mono">
+                                @b.Name
+                                @if (_usedBy.TryGetValue($"{b.Source}:{b.Name}", out var env))
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ml-1">ambiente: @env</MudChip>
+                                }
+                            </span>
+                            <span class="ramo-quando">@Ui.Ago(b.Date)</span>
+                            <span class="ramo-sub"><code>@Ui.Short(b.Commit)</code> @b.Subject · @b.Author</span>
+                        </div>
+                    }
+                }
+            }
+        </div>
+
+        <MudText Typo="Typo.body2" Class="mt-3 mb-2">
+            @if (_selected is { } sel)
+            {
+                <span>Selecionada: <code>@sel.Name</code> (@(sel.Source == BranchSource.Local ? "repo local" : "remoto"))</span>
+            }
+            else
+            {
+                <span class="mud-text-secondary">Nenhuma branch selecionada</span>
+            }
+        </MudText>
+
+        <MudGrid Spacing="2">
+            @if (Mode != EnvDialogMode.Edit)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_name" Label="Nome do ambiente" Placeholder="ex.: develop" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Immediate="true" spellcheck="false" HelperText="Minúsculas, números e hífens" />
+                </MudItem>
+            }
+            <MudItem xs="12" sm="@(Mode == EnvDialogMode.Edit ? 12 : 6)">
+                <MudSelect T="string" @bind-Value="_config" Label="Configuração de compilação" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var c in _configs)
+                    {
+                        <MudSelectItem Value="c">@c</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_sitePath" Label="Pasta base do ambiente (IIS) — opcional" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" Immediate="true" spellcheck="false" HelperText="@SitePathHelp" />
+            </MudItem>
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_host" Label="Nome DNS — opcional" Placeholder="ex.: sitio.teste.br" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" Immediate="true" spellcheck="false"
+                              HelperText="O site passa a responder também em http://nome/ (porto 80). O nome tem de existir no DNS (ou no ficheiro hosts) e apontar para este servidor." />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudTextField @bind-Value="_port" Label="Porta" Placeholder="auto" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Immediate="true" InputMode="InputMode.numeric" HelperText="Vazio = a primeira livre" />
+            </MudItem>
+            @if (Mode != EnvDialogMode.Edit)
+            {
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="_auto" Color="Color.Primary" Label="Auto-deploy ao detetar novos commits" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3" role="alert">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_selected is null || _busy)" OnClick="SubmitAsync">
+            @(Mode == EnvDialogMode.Edit ? "Guardar" : "Criar e implantar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    static readonly string[] FallbackConfigs = ["Desenvolvimento", "Qualidade", "Producao", "Release", "Debug"];
+    const string MainGroup = "principais";
+
+    [CascadingParameter] IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public PanelState State { get; set; } = default!;
+    [Parameter] public EnvState? Env { get; set; }
+    [Parameter] public EnvDialogMode Mode { get; set; }
+
+    readonly CancellationTokenSource _cts = new();
+    readonly HashSet<string> _closed = [];
+    // "origem:branch" -> ambiente que ja a usa
+    readonly Dictionary<string, string> _usedBy = [];
+    IReadOnlyList<BranchInfo> _branches = [];
+    (string Name, string Source)? _selected;
+    string _source = BranchSource.Remote, _query = "", _name = "", _config = "", _sitePath = "", _host = "", _port = "";
+    List<string> _configs = [];
+    bool _auto = true, _hasLocal, _busy;
+    string? _error;
+
+    /// <summary>Opens the dialog. True when something was created or saved.</summary>
+    public static async Task<bool> ShowAsync(IDialogService dialogs, PanelState state, EnvState? env, EnvDialogMode mode)
+    {
+        var title = mode switch
+        {
+            EnvDialogMode.Edit => $"Editar «{env!.Name}»: branch e configuração",
+            EnvDialogMode.Copy => $"Duplicar «{env!.Name}» num ambiente novo",
+            _ => "Novo ambiente: escolha uma branch",
+        };
+        var parameters = new DialogParameters<EnvDialog> { { x => x.State, state }, { x => x.Env, env }, { x => x.Mode, mode } };
+        var dialog = await dialogs.ShowAsync<EnvDialog>(title, parameters, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        return await dialog.Result is { Canceled: false };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hasLocal = !string.IsNullOrEmpty(State.LocalRepoPath);
+        _source = Env?.Source ?? BranchSource.Remote;
+        if (!_hasLocal && _source == BranchSource.Local) _source = BranchSource.Remote;
+        if (Env is not null) _selected = (Env.Branch, Env.Source);
+        foreach (var e in State.Environments) _usedBy[$"{e.Source}:{e.Branch}"] = e.Name;
+
+        // Editar mostra os valores atuais. Duplicar so leva branch, configuracao e auto-deploy: pasta, nome DNS e porta
+        // sao de cada ambiente (vazios = os por omissao do ambiente novo).
+        _name = Mode == EnvDialogMode.Copy ? Truncate($"{Env!.Name}-copia") : "";
+        _sitePath = Mode == EnvDialogMode.Edit ? Env!.SitePath : "";
+        _host = Mode == EnvDialogMode.Edit ? Env!.HostHeader : "";
+        _port = Mode == EnvDialogMode.Edit ? Env!.Port.ToString() : "";
+        _auto = Env?.AutoDeploy ?? true;
+        _config = Env?.Configuration ?? "Desenvolvimento";
+
+        _branches = Mirror.Branches;
+        await LoadConfigsAsync();
+        if (_branches.Count == 0) _ = WatchBranchesAsync(_cts.Token);
+    }
+
+    static string Truncate(string s) => s.Length > 40 ? s[..40] : s;
+
+    string SitePathHelp => Mode == EnvDialogMode.Edit
+        ? "Ao mudar, o próximo deploy passa a usar a pasta nova."
+        : $"Vazio = {CiStore.DefaultSitePath(string.IsNullOrWhiteSpace(_name) ? "<nome>" : _name.Trim().ToLowerInvariant())}; o site fica em <pasta>\\releases\\<versão>.";
+
+    string EmptyMessage =>
+        _source == BranchSource.Local ? "Não há branches do repo local (localRepoPath está configurado?)."
+        : _branches.Count > 0 ? "Nenhuma branch corresponde."
+        : !Mirror.HasAccess ? "Ainda não há repositório configurado: indique o URL e o token em «Acesso ao repositório» (menu do utilizador)."
+        : Mirror.LastError is { } error ? $"Não foi possível ler o repositório: {GitAuth.Friendly(error)}. Verifique o URL e o token em «Acesso ao repositório»."
+        : "A ler as branches do repositório… (a primeira vez pode demorar alguns segundos)";
+
+    // Agrupadas pelo prefixo (feature/, bugfix/…); as que nao tem «/» ficam em «principais», primeiro.
+    List<(string Group, List<BranchInfo> Items)> Groups()
+    {
+        var q = _query.Trim().ToLowerInvariant();
+        return _branches
+            .Where(b => b.Source == _source && (q.Length == 0 || b.Name.ToLowerInvariant().Contains(q)
+                || b.Subject.ToLowerInvariant().Contains(q) || b.Author.ToLowerInvariant().Contains(q)))
+            .GroupBy(b => b.Name.Contains('/') ? b.Name.Split('/')[0] : MainGroup)
+            .OrderBy(g => g.Key == MainGroup ? 0 : 1).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.Key, g.ToList()))
+            .ToList();
+    }
+
+    void Toggle(string group)
+    {
+        if (!_closed.Remove(group)) _closed.Add(group);
+    }
+
+    async Task SelectAsync(BranchInfo b)
+    {
+        _selected = (b.Name, b.Source);
+        if (Mode == EnvDialogMode.New) _name = Ui.Slug(b.Name) + (b.Source == BranchSource.Local ? "-local" : "");
+        _error = null;
+        await LoadConfigsAsync();
+    }
+
+    async Task PickAsync(BranchInfo b)
+    {
+        await SelectAsync(b);
+        await SubmitAsync();
+    }
+
+    // Configuracoes declaradas no projeto web da branch escolhida, mantendo a escolhida.
+    async Task LoadConfigsAsync()
+    {
+        var want = string.IsNullOrEmpty(_config) ? "Desenvolvimento" : _config;
+        List<string> list = [];
+        if (_selected is { } s)
+        {
+            try { list = await Mirror.ConfigurationsAsync(s.Name, s.Source, _cts.Token); }
+            catch (Exception) { /* fica a lista por omissao */ }
+        }
+        if (list.Count == 0) list = [.. FallbackConfigs];
+        if (!list.Contains(want)) list.Insert(0, want);
+        _configs = list;
+        _config = want;
+    }
+
+    // Enquanto o repositorio ainda esta a ser lido (primeira vez), a lista atualiza-se sozinha em vez de ficar vazia.
+    async Task WatchBranchesAsync(CancellationToken ct)
+    {
+        try
+        {
+            for (var i = 0; i < 40 && _branches.Count == 0; i++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                await InvokeAsync(async () =>
+                {
+                    _branches = Mirror.Branches;
+                    if (_branches.Count > 0) await LoadConfigsAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (Exception) when (ct.IsCancellationRequested) { }
+    }
+
+    async Task SubmitAsync()
+    {
+        if (_selected is not { } sel || _busy) return;
+        _error = null;
+        int? port = null;
+        if (!string.IsNullOrWhiteSpace(_port))
+        {
+            if (!int.TryParse(_port.Trim(), out var p) || p is < 1 or > 65535) { _error = "Porta inválida (1-65535)."; return; }
+            port = p;
+        }
+        var sitePath = string.IsNullOrWhiteSpace(_sitePath) ? null : _sitePath.Trim();
+        var host = (_host ?? "").Trim().ToLowerInvariant();
+        var portText = port is null ? "" : $" · porta {port}";
+        _busy = true;
+        try
+        {
+            if (Mode == EnvDialogMode.Edit)
+            {
+                var env = Env!;
+                var r = Panel.UpdateEnv(env.Name, new EnvRequest(null, sel.Name, sel.Source, port, _config, null, sitePath, null, null, host, null));
+                if (!r.Ok) { _error = r.Message ?? $"O ambiente {env.Name} já não existe."; return; }
+                // Uma nova branch, configuracao, porta ou nome DNS so tem efeito depois de recompilar/refazer o binding: reimplanta ja.
+                var changed = sel.Name != env.Branch || sel.Source != env.Source || _config != env.Configuration
+                              || (port is not null && port != env.Port) || host != env.HostHeader;
+                if (changed && env.Job is null) Panel.Enqueue(env.Name, JobKind.Deploy);
+                Snackbar.Add($"{env.Name}: {sel.Name} · {_config}{portText}{(changed ? " · a reimplantar…" : "")}", Severity.Info);
+            }
+            else
+            {
+                var name = string.IsNullOrWhiteSpace(_name) ? Ui.Slug(sel.Name) : _name.Trim();
+                var r = await Panel.CreateEnvAsync(new EnvRequest(name, sel.Name, sel.Source, port, _config, _auto, sitePath, null, null, host,
+                    Mode == EnvDialogMode.Copy ? Env!.Name : null), _cts.Token);
+                if (!r.Ok) { _error = r.Message; return; }
+                Snackbar.Add($"Ambiente {name} criado ({_config}){portText}: a implantar {sel.Name}…", Severity.Info);
+            }
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public void Dispose() => _cts.Cancel();
+}

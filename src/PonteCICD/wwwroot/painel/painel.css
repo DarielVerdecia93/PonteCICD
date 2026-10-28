@@ -1,4 +1,4 @@
-/* Painel Blazor (/v2): o que o MudBlazor nao traz, com as cores do tema (variaveis --mud-palette-*). */
+/* Painel (Blazor): o que o MudBlazor nao traz, com as cores do tema (variaveis --mud-palette-*). */
 :root { --mono: "Cascadia Code", ui-monospace, Consolas, monospace; }
 code, .mono { font-family: var(--mono); font-size: 12px; }
 code { background: var(--mud-palette-action-default-hover); padding: 1px 6px; border-radius: 5px; }
@@ -38,6 +38,24 @@ code { background: var(--mud-palette-action-default-hover); padding: 1px 6px; bo
 .estado .rodinha { width: 16px !important; height: 16px !important; flex: none; }
 
 .linha-job { cursor: pointer; }
+
+/* Login */
+.login-fundo { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--mud-palette-background); }
+.login-coluna { width: min(420px, 100%); }
+
+/* Escolha de branch (dialogo de ambiente) */
+.ramos { max-height: 40vh; overflow: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 8px; padding: 6px; }
+.ramos-vazio { padding: 28px 12px; text-align: center; color: var(--mud-palette-text-secondary); }
+.grupo-nome { display: flex; align-items: center; gap: 4px; padding: 8px 6px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--mud-palette-text-secondary); cursor: pointer; user-select: none; }
+.ramo { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; position: relative; }
+.ramo:hover { background: var(--mud-palette-action-default-hover); }
+.ramo.sel { border-color: color-mix(in srgb, var(--mud-palette-primary) 50%, transparent); background: color-mix(in srgb, var(--mud-palette-primary) 12%, transparent); }
+.ramo.sel::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 18px; border-radius: 3px; background: var(--mud-palette-primary); }
+.ramo-nome { font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; }
+.ramo-nome .mud-chip { margin: 0 0 0 6px; height: 20px; }
+.ramo-quando { font-size: 12px; color: var(--mud-palette-text-secondary); text-align: right; }
+.ramo-sub { grid-column: 1 / -1; font-size: 12px; color: var(--mud-palette-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.regras textarea { font-family: var(--mono); font-size: 13px; }
 pre.log { margin: 0 16px 16px; height: calc(100vh - 96px); overflow: auto; background: #0c0c0c; color: #e6e6e6; padding: 14px; border-radius: 8px; font: 12px/1.5 var(--mono); white-space: pre-wrap; }
 
 /* Reconexao (classes que o Blazor poe em #components-reconnect-modal). */

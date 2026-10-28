@@ -1,7 +1,7 @@
-@* Sessao terminada com a pagina aberta (p. ex. palavra-passe alterada noutro sitio): login do painel classico e volta. *@
+@* Sessao terminada com a pagina aberta (p. ex. palavra-passe alterada noutro sitio): login e volta. *@
 @inject NavigationManager Nav
 
 @code {
     protected override void OnInitialized() =>
-        Nav.NavigateTo("/?voltar=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri)), forceLoad: true);
+        Nav.NavigateTo("/login?voltar=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri)), forceLoad: true);
 }

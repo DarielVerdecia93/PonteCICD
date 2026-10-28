@@ -1,0 +1,19 @@
+@* Tema e servicos do MudBlazor (dialogos, avisos, menus), comuns ao painel e ao login. *@
+<MudThemeProvider @ref="_theme" Theme="Ui.Theme" @bind-IsDarkMode="_dark" />
+<MudPopoverProvider />
+<MudDialogProvider CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+@code {
+    MudThemeProvider? _theme;
+    bool _dark;
+
+    // Segue o tema do Windows (claro/escuro), tambem quando muda com a pagina aberta.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _theme is null) return;
+        _dark = await _theme.GetSystemDarkModeAsync();
+        await _theme.WatchSystemDarkModeAsync(dark => { _dark = dark; return InvokeAsync(StateHasChanged); });
+        StateHasChanged();
+    }
+}
