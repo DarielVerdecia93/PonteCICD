@@ -61,7 +61,7 @@ Copie `engine\Web.local.config.example` como `Web.local.config` (comum) ou como
 
 ## Instalar com o instalador (recomendado)
 
-Descarregue `PonteCI-Setup-<versão>.exe` da página de [Releases](https://github.com/DarielVerdecia93/Legados-CI/releases)
+Descarregue `PonteCI-Setup-<versão>.exe` da página de [Releases](https://github.com/DarielVerdecia93/PonteCICD/releases)
 e execute-o como administrador. O instalador:
 
 1. copia o serviço (autocontido: **não precisa de .NET instalado**), o motor `engine\` e o `install-service.ps1`
