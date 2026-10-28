@@ -56,7 +56,11 @@
   .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: .2s; }
   .live.on i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
-  header .meta { color: var(--muted); font-size: 12px; margin-right: auto; }
+  header .live { margin-right: auto; }
+  /* Estado da verificação do remoto: pastilha flutuante discreta (não ocupa espaço nem bloqueia cliques). */
+  .statusbar { position: fixed; left: 16px; bottom: 16px; z-index: 5; max-width: calc(100vw - 32px); padding: 6px 12px; border-radius: 999px; background: var(--mica); border: 1px solid var(--border); box-shadow: var(--shadow-flyout); font-size: 12px; color: var(--muted); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); opacity: .88; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar:empty { display: none; }
+  .statusbar .err { pointer-events: auto; }
 
   main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 72px; display: grid; gap: 26px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
@@ -209,7 +213,6 @@
 <header>
   <h1>Ponte CI/CD</h1>
   <span class="live" id="live"><i></i><span>a ligar…</span></span>
-  <span class="meta" id="meta"></span>
   <button id="projectBtn" title="Projeto, repositório e token de acesso">Projeto e acesso</button>
   <button id="settingsBtn" title="Frequência de atualização" aria-label="Frequência de atualização">⚙</button>
   <button id="fetch" title="Verificar agora o remoto e o repositório local">Procurar alterações</button>
@@ -236,7 +239,8 @@
     <pre class="log" id="log"></pre>
   </section>
 </main>
-<footer style="text-align:center;padding:18px 16px 26px;font-size:12px;color:var(--faint)">Ponte CI/CD · © Magia Technologies Labs</footer>
+<div class="statusbar" id="meta" role="status" aria-live="off"></div>
+<footer style="text-align:center;padding:18px 16px 64px;font-size:12px;color:var(--faint)">Ponte CI/CD · © Magia Technologies Labs</footer>
 
 <dialog id="picker">
   <form method="dialog" id="pickerForm">
