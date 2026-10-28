@@ -16,6 +16,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# IisStateProbe lee la salida como UTF-8 (el preflight no pasa por common.ps1, que tambien lo fija).
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
 
 # ---- Preflight: comprueba que IIS esta disponible para operar (no dot-sourcea common.ps1,
 #      porque common.ps1 lanza si WebAdministration falta y aqui queremos reportarlo como JSON).

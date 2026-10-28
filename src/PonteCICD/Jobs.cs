@@ -161,6 +161,9 @@ public sealed class JobRunner(CiStore store, JobQueue queue, Mirror mirror, ILog
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            // O motor poe a consola em UTF-8 (common.ps1): MSBuild e git escrevem nomes com acentos.
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = store.EngineDir,

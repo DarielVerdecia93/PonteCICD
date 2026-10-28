@@ -2,6 +2,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 
+# El servicio (Jobs.cs) lee la salida del motor como UTF-8. Con la consola en UTF-8, PowerShell decodifica tambien bien lo que
+# escriben MSBuild y git (UTF-8): sin esto, cada letra acentuada de las rutas salia en el log como dos caracteres basura.
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+
 # IIS completo: toda la gestion de sitio/pool/binding se hace con el modulo WebAdministration
 # (proveedor IIS:\). El import puede fallar por dos motivos distintos, hay que distinguirlos:
 #  - el modulo no existe  -> IIS no instalado;
@@ -167,6 +171,55 @@ function Get-TransformTasksDll([string]$MSBuild) {
         Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $dll) { throw "Nao foi encontrado Microsoft.Web.Publishing.Tasks.dll em $msbuildRoot." }
     return $dll.FullName
+}
+
+# ---------------------------------------------------------------- publicacion: reglas de exclusion
+
+# Reglas de excludeFromPublish (las globales de ci.json + las del entorno). Son rutas relativas a la raiz del sitio publicado
+# (= la carpeta del proyecto web), con '\' o '/' y sin distinguir mayusculas. Cada regla excluye la ruta y todo lo que cuelga de ella:
+#   DBScripts   *.sql   Thumbs.db   un solo nombre: vale en cualquier nivel (como en .gitignore)
+#   \DBScripts                      con '\' (o '/') delante: solo la de la raiz
+#   DBScripts\!!!!!After Deploy     con '\' en medio: ruta desde la raiz
+#   Content\**\*.map                * = texto dentro de un nivel, ? = un caracter, ** = cualquier numero de niveles
+# El panel las valida al guardarlas (PublishRules.cs).
+function Get-PublishExcludeRules {
+    $rules = @($Cfg.excludeFromPublish)
+    if ($EnvCfg.PSObject.Properties['excludeFromPublish']) { $rules += @($EnvCfg.excludeFromPublish) }
+    return @($rules | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Unique)
+}
+
+function ConvertTo-PublishRuleRegex([string]$Rule) {
+    $r = $Rule.Trim().Replace('/', '\')
+    if ($r.StartsWith('.\')) { $r = $r.Substring(1) }
+    $anyLevel = -not $r.TrimEnd('\').Contains('\')
+    $r = $r.Trim('\')
+    if (-not $r) { return $null }
+    $sb = New-Object System.Text.StringBuilder
+    if ($anyLevel) { [void]$sb.Append('(?:.*\\)?') }
+    for ($i = 0; $i -lt $r.Length; $i++) {
+        $c = $r[$i]
+        if ($c -eq '*' -and $i + 1 -lt $r.Length -and $r[$i + 1] -eq '*') {
+            $i++
+            if ($i + 1 -lt $r.Length -and $r[$i + 1] -eq '\') { $i++; [void]$sb.Append('(?:.*\\)?') } else { [void]$sb.Append('.*') }
+        } elseif ($c -eq '*') {
+            [void]$sb.Append('[^\\]*')
+        } elseif ($c -eq '?') {
+            [void]$sb.Append('[^\\]')
+        } elseif ($c -eq '`' -or $c -eq "'" -or $c -eq '%') {
+            # Comillas de MSBuild (cerrarian el argumento en publish.targets) y % (MSBuild leeria %xx como un escape).
+            [void]$sb.AppendFormat('\x{0:X2}', [int]$c)
+        } else {
+            [void]$sb.Append([regex]::Escape([string]$c))
+        }
+    }
+    return '^' + $sb.ToString() + '(?:\\.*)?$'
+}
+
+# Una sola expresion regular (vacia = sin reglas) que publish.targets aplica a la ruta de destino de cada fichero publicado.
+function Get-PublishExcludeRegex([string[]]$Rules) {
+    $parts = @($Rules | ForEach-Object { ConvertTo-PublishRuleRegex $_ } | Where-Object { $_ })
+    if (-not $parts.Count) { return '' }
+    return '(?i)' + (($parts | ForEach-Object { "(?:$_)" }) -join '|')
 }
 
 function Invoke-Robocopy([string]$Source, [string]$Destination, [string[]]$Exclude = @()) {

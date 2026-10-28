@@ -101,6 +101,8 @@ public sealed class IisStateProbe(CiStore store, ILogger<IisStateProbe> log)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,   // sitestate.ps1 escreve em UTF-8, como o motor (common.ps1)
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = store.EngineDir,

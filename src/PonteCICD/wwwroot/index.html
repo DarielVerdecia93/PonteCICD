@@ -206,6 +206,12 @@
   #projectMsg { font-size: 13px; min-height: 18px; }
   #projectMsg.ok { color: var(--ok); }
   #settings .foot-grid { grid-template-columns: 1fr; }
+  #rules { width: min(620px, calc(100vw - 32px)); }
+  #rules .foot-grid { grid-template-columns: 1fr; }
+  #rules textarea { width: 100%; box-sizing: border-box; min-height: 150px; resize: vertical; font: 13px/1.5 var(--mono); color: inherit; background: var(--panel); border: 1px solid var(--border2); border-radius: var(--r-sm); padding: 6px 10px; }
+  #rules textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #rules .hint code { font-size: 11px; }
+  #rulesInherited:empty { display: none; }
 
   /* menu do utilizador */
   .usermenu { position: relative; }
@@ -253,6 +259,7 @@
     <div class="menu" role="menu">
       <div class="who"><b id="whoName">—</b>Sessão iniciada</div>
       <button role="menuitem" id="projectBtn">Acesso ao repositório</button>
+      <button role="menuitem" id="rulesBtn">Regras de publicação</button>
       <button role="menuitem" id="settingsBtn">Frequência de atualização</button>
       <hr>
       <button role="menuitem" id="passwordBtn">Alterar palavra-passe</button>
@@ -393,6 +400,30 @@
         <button type="button" id="projectClearToken" hidden>Remover token</button>
         <button value="cancel" formnovalidate>Cancelar</button>
         <button class="primary" id="projectSave" value="ok">Guardar e ler branches</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="rules">
+  <form method="dialog" id="rulesForm">
+    <div class="picker-head"><b>Regras de publicação</b></div>
+    <div class="picker-foot">
+      <div class="foot-grid">
+        <label class="f">Aplicar a
+          <select name="scope"></select>
+        </label>
+        <label class="f">Excluir da publicação (uma regra por linha)
+          <textarea name="rules" spellcheck="false" autocomplete="off" placeholder="DBScripts&#10;*.sql&#10;Content\**\*.map"></textarea>
+          <span class="hint" id="rulesInherited"></span>
+          <span class="hint">Caminhos relativos ao projeto web; cada regra exclui a pasta ou ficheiro e tudo o que tiver dentro. Um só nome (<code>DBScripts</code>, <code>*.sql</code>) vale em qualquer nível; com <code>\</code> à frente (<code>\DBScripts</code>), só o da raiz. <code>*</code> = qualquer texto dentro de um nível, <code>?</code> = um caracter, <code>**</code> = qualquer número de pastas.</span>
+        </label>
+      </div>
+      <div class="muted" style="font-size:12px">O que é excluído nem chega a ser copiado na compilação. As alterações aplicam-se no próximo deploy.</div>
+      <div class="err" id="rulesErr"></div>
+      <div class="foot-actions">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button class="primary" value="ok">Guardar</button>
       </div>
     </div>
   </form>
@@ -862,6 +893,45 @@ $('#settingsForm').addEventListener('submit', async ev => {
     refresh();
     toast(`Remoto a cada ${fmtSecs(Number(f.poll.value))} · painel a cada ${fmtSecs(uiSecs)}`, 'ok');
   } catch (err) { $('#settingsErr').textContent = err.message; }
+});
+
+// ---------------------------------------------------------------- regras de publicação (excludeFromPublish)
+// rulesDraft guarda as regras de todos os âmbitos enquanto o diálogo está aberto: mudar o seletor não perde o que se escreveu.
+let rulesDraft = null, rulesScope = '';
+const rulesLines = text => text.split('\n').map(s => s.trim()).filter(Boolean);
+function showRulesScope() {
+  const f = $('#rulesForm');
+  f.rules.value = (rulesScope ? rulesDraft.environments[rulesScope] ?? [] : rulesDraft.all).join('\n');
+  $('#rulesInherited').innerHTML = rulesScope && rulesDraft.all.length
+    ? `Somam-se às de todos os ambientes: ${rulesDraft.all.map(r => `<code>${esc(r)}</code>`).join(' ')}` : '';
+}
+function keepRulesScope() {
+  const list = rulesLines($('#rulesForm').rules.value);
+  if (rulesScope) rulesDraft.environments[rulesScope] = list; else rulesDraft.all = list;
+}
+$('#rulesBtn').onclick = async () => {
+  const f = $('#rulesForm');
+  try { rulesDraft = await api('GET', '/api/publish-rules'); }
+  catch (err) { toast(esc(err.message), 'bad'); return; }
+  rulesDraft.all ??= []; rulesDraft.environments ??= {};
+  rulesScope = '';
+  f.scope.innerHTML = '<option value="">Todos os ambientes</option>' +
+    Object.keys(rulesDraft.environments).map(n => `<option value="${esc(n)}">Só o ambiente ${esc(n)}</option>`).join('');
+  showRulesScope();
+  $('#rulesErr').textContent = '';
+  $('#rules').showModal();
+  f.rules.focus();
+};
+$('#rulesForm').scope.onchange = ev => { keepRulesScope(); rulesScope = ev.target.value; showRulesScope(); };
+$('#rulesForm').addEventListener('submit', async ev => {
+  if (ev.submitter?.value !== 'ok') return;
+  ev.preventDefault();
+  keepRulesScope();
+  try {
+    await api('PUT', '/api/publish-rules', rulesDraft);
+    $('#rules').close();
+    toast('Regras de publicação guardadas: aplicam-se no próximo deploy.', 'ok');
+  } catch (err) { $('#rulesErr').textContent = err.message; }
 });
 
 // ---------------------------------------------------------------- acesso ao repositório (URL + token)
