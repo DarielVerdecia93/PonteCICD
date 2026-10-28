@@ -1,0 +1,50 @@
+@inject CiStore Store
+@inject PanelService Panel
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="int" @bind-Value="_poll" Label="Verificar o remoto a cada" Variant="Variant.Outlined"
+                   HelperText="De quanto em quanto tempo o serviço consulta o remoto (git) à procura de commits novos. O painel atualiza-se sozinho.">
+            @foreach (var s in _options)
+            {
+                <MudSelectItem Value="s">@Ui.Secs(s)</MudSelectItem>
+            }
+        </MudSelect>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    static readonly int[] Options = [10, 20, 30, 60, 120, 300, 600];
+
+    [CascadingParameter] IMudDialogInstance Dialog { get; set; } = default!;
+
+    int _poll;
+    int[] _options = [];
+    string? _error;
+
+    public static Task ShowAsync(IDialogService dialogs) =>
+        dialogs.ShowAsync<SettingsDialog>("Frequência de atualização", new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+    protected override void OnInitialized()
+    {
+        _poll = Store.Load().PollIntervalSec;
+        _options = [.. Options.Append(_poll).Distinct().Order()];
+    }
+
+    void Save()
+    {
+        _error = Panel.SetPollInterval(_poll);
+        if (_error is not null) return;
+        Snackbar.Add($"O remoto passa a ser verificado a cada {Ui.Secs(_poll)}.", Severity.Success);
+        Dialog.Close();
+    }
+}

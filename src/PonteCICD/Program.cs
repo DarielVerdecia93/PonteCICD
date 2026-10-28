@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using MudBlazor.Services;
@@ -69,15 +68,16 @@ builder.Services.AddSingleton<Poller>();
 builder.Services.AddHostedService<JobRunner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Poller>());
 builder.Services.AddSingleton<PanelService>();
-// Painel Blazor (pre-visualizacao em /v2): componentes interativos no servidor (SignalR), com MudBlazor.
-// A sessao e a mesma cookie do painel classico; o PanelAuthStateProvider volta a verifica-la com a pagina aberta.
+builder.Services.AddSingleton<ProjectService>();
+// Painel em Blazor: componentes interativos no servidor (SignalR), com MudBlazor. A sessao e a cookie de sempre
+// (o login passa pela API, que a cria); o PanelAuthStateProvider volta a verifica-la com a pagina aberta.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<AuthenticationStateProvider, PanelAuthStateProvider>();
-// Avisos em baixo a direita durante 7 s, como no painel classico.
+// Avisos durante 7 s, em baixo a esquerda: a direita tapariam os botoes dos dialogos.
 builder.Services.AddMudServices(o =>
 {
-    o.SnackbarConfiguration.PositionClass = MudBlazor.Defaults.Classes.Position.BottomRight;
+    o.SnackbarConfiguration.PositionClass = MudBlazor.Defaults.Classes.Position.BottomLeft;
     o.SnackbarConfiguration.VisibleStateDuration = 7000;
 });
 
@@ -105,105 +105,23 @@ api.MapAuth();
 
 api.MapGet("/state", (PanelService panel, CancellationToken ct) => panel.GetStateAsync(ct));
 
-api.MapPut("/settings", (SettingsRequest req, Notifier notifier) =>
-{
-    if (req.PollIntervalSec is null or < Poller.MinPollSec or > 3600)
-        return Results.BadRequest($"O intervalo deve estar entre {Poller.MinPollSec} e 3600 segundos.");
-    store.Update(c => c.PollIntervalSec = req.PollIntervalSec.Value);
-    notifier.Changed();
-    return Results.Ok();
-});
+api.MapPut("/settings", (SettingsRequest req, PanelService panel) =>
+    panel.SetPollInterval(req.PollIntervalSec) is { } error ? Results.BadRequest(error) : Results.Ok());
 
 // Regras de exclusao da publicacao: as globais (todos os ambientes) e as de cada ambiente. Aplicam-se no deploy seguinte.
-api.MapGet("/publish-rules", () =>
-{
-    var c = store.Load();
-    return new { All = c.ExcludeFromPublish, Environments = c.Environments.ToDictionary(e => e.Name, e => e.ExcludeFromPublish) };
-});
+api.MapGet("/publish-rules", (PanelService panel) => panel.GetPublishRules());
 
-api.MapPut("/publish-rules", (PublishRulesRequest req, Notifier notifier) =>
-{
-    var (ok, all, error) = PublishRules.Validate(req.All);
-    if (!ok) return Results.BadRequest(error);
-    var perEnv = new Dictionary<string, List<string>>();
-    foreach (var (name, rules) in req.Environments ?? new Dictionary<string, List<string?>>())
-    {
-        var (okEnv, list, envError) = PublishRules.Validate(rules);
-        if (!okEnv) return Results.BadRequest($"Ambiente {name}: {envError}");
-        perEnv[name] = list;
-    }
-    store.Update(c =>
-    {
-        c.ExcludeFromPublish = all;
-        foreach (var e in c.Environments)
-            if (perEnv.TryGetValue(e.Name, out var list)) e.ExcludeFromPublish = list;
-    });
-    notifier.Changed();
-    return Results.Ok();
-});
+api.MapPut("/publish-rules", (PublishRulesRequest req, PanelService panel) =>
+    panel.SavePublishRules(req) is { } error ? Results.BadRequest(error) : Results.Ok());
 
-api.MapGet("/project", () =>
-{
-    var c = store.Load();
-    return new { c.RepoUrl, c.SolutionFile, c.ProjectFile, c.PackagesSource, c.LocalRepoPath, HasToken = gitAuth.HasToken, TokenUser = gitAuth.User };
-});
+api.MapGet("/project", (ProjectService project) => project.Get());
 
-api.MapPut("/project", async (ProjectRequest req, Mirror mirror, Notifier notifier) =>
-{
-    var url = (req.RepoUrl ?? "").Trim();
-    if (url.Length > 0 && !Regex.IsMatch(url, @"^https?://", RegexOptions.IgnoreCase))
-        return Results.BadRequest("O URL do repositorio deve comecar por https:// (ou http://).");
-    // Com token guardado no painel, o URL nao leva «utilizador:token@» (nem ${VAR}): entraria em conflito com a autenticacao.
-    if (!string.IsNullOrWhiteSpace(req.Token) || (gitAuth.HasToken && req.ClearToken != true))
-        url = Regex.Replace(url, @"^(https?://)[^/@]*@", "$1", RegexOptions.IgnoreCase);
-    var previousUrl = store.Load().RepoUrl;
-    store.Update(c =>
-    {
-        c.RepoUrl = url;
-        // Opcionais (so no ci.json): o painel nao os envia, por isso so se alteram quando vierem no pedido.
-        if (req.SolutionFile is not null) c.SolutionFile = req.SolutionFile.Trim();
-        if (req.ProjectFile is not null) c.ProjectFile = req.ProjectFile.Trim();
-        if (req.PackagesSource is not null) c.PackagesSource = req.PackagesSource.Trim();
-        if (req.LocalRepoPath is not null) c.LocalRepoPath = req.LocalRepoPath.Trim();
-    });
-    if (req.ClearToken == true) gitAuth.Clear();
-    else if (!string.IsNullOrWhiteSpace(req.Token)) gitAuth.Save(req.TokenUser, req.Token);
-    // Outro repositorio: nao ficam objetos do anterior no espelho.
-    if (!string.IsNullOrWhiteSpace(previousUrl) && !string.Equals(previousUrl.Trim(), url, StringComparison.OrdinalIgnoreCase))
-        await mirror.ResetAsync();
-    // Le o remoto ja com a nova configuracao e responde com o resultado (quantas branches, ou o erro real).
-    // Se demorar mais de 60 s (repositorio grande) segue em segundo plano e o painel mostra o progresso.
-    var sync = Task.Run(async () => { try { await mirror.SyncRemoteAsync(force: true, CancellationToken.None); } catch (Exception) { /* fica em lastError */ } });
-    var finished = await Task.WhenAny(sync, Task.Delay(TimeSpan.FromSeconds(60)));
-    notifier.Changed();
-    if (finished != sync) return Results.Ok(new { pending = true, branches = 0, error = (string?)null });
-    // Sem URL e token nao ha repositorio: o "erro" e so o aviso de falta de configuracao (a resposta ja diz branches = 0).
-    var syncError = mirror.HasAccess ? mirror.LastError : null;
-    return Results.Ok(new
-    {
-        pending = false,
-        branches = mirror.Branches.Count(b => b.Source == BranchSource.Remote),
-        error = syncError is null ? null : GitAuth.Friendly(syncError, req.Token),
-    });
-});
+api.MapPut("/project", async (ProjectRequest req, ProjectService project) => ToHttp(await project.SaveAsync(req)));
 
-api.MapPost("/project/test", async (ProjectRequest req, CancellationToken ct) =>
+api.MapPost("/project/test", async (ProjectRequest req, ProjectService project, CancellationToken ct) =>
 {
-    var url = Mirror.ExpandEnvVars((string.IsNullOrWhiteSpace(req.RepoUrl) ? store.Load().RepoUrl : req.RepoUrl).Trim());
-    if (url.Length == 0) return Results.BadRequest("Indique o URL do repositorio.");
-    var secret = string.IsNullOrWhiteSpace(req.Token) ? null : new GitSecret(req.TokenUser ?? "", req.Token.Trim());
-    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-    cts.CancelAfter(TimeSpan.FromSeconds(30));
-    try
-    {
-        var (code, output) = await Git.RunAsync(["ls-remote", "--heads", url], null, cts.Token, secret, url);
-        if (code != 0) return Results.BadRequest($"A ligacao falhou: {GitAuth.Friendly(output, secret?.Token)}");
-        return Results.Ok(new { branches = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length });
-    }
-    catch (OperationCanceledException)
-    {
-        return Results.BadRequest("Tempo esgotado (30 s) a ligar ao repositorio.");
-    }
+    var r = await project.TestAsync(req, ct);
+    return r.Ok ? Results.Ok(new { branches = r.Value }) : Results.BadRequest(r.Message);
 });
 
 api.MapGet("/branches", (Mirror mirror) => mirror.Branches);
@@ -231,156 +149,9 @@ api.MapPost("/fetch", async (Mirror mirror, CancellationToken ct) =>
     return Results.Ok(new { mirror.LastCheck, LastError = mirror.LastError is null ? null : GitAuth.Friendly(mirror.LastError) });
 });
 
-api.MapPost("/envs", async (EnvRequest req, Mirror mirror, JobQueue queue, CancellationToken ct) =>
-{
-    var name = (req.Name ?? "").Trim().ToLowerInvariant();
-    if (!Regex.IsMatch(name, "^[a-z0-9][a-z0-9-]{0,39}$"))
-        return Results.BadRequest("Nome invalido: minusculas, numeros e hifens (max. 40).");
+api.MapPost("/envs", async (EnvRequest req, PanelService panel, CancellationToken ct) => ToHttp(await panel.CreateEnvAsync(req, ct)));
 
-    var cfg0 = store.Load();
-    // Duplicate (copyFrom): seed from a template for the fields the request omits, but never copy the
-    // IIS identity (SiteName/AppPoolName) nor the host-specific SitePath/HostHeader/Port.
-    EnvConfig? template = null;
-    if (!string.IsNullOrWhiteSpace(req.CopyFrom))
-    {
-        template = cfg0.Environments.FirstOrDefault(e => e.Name == req.CopyFrom);
-        if (template is null) return Results.BadRequest($"O ambiente de origem '{req.CopyFrom}' não existe.");
-    }
-
-    var branch = req.Branch ?? template?.Branch;
-    var source = req.Source ?? template?.Source ?? BranchSource.Remote;
-    if (string.IsNullOrWhiteSpace(branch) || mirror.Find(branch, source) is null)
-        return Results.BadRequest($"O branch '{branch}' nao existe ({source}).");
-
-    // Solucao e projeto web: se nao estao no ci.json procuram-se no proprio branch (nao e preciso indicar nada).
-    if (string.IsNullOrWhiteSpace(cfg0.ProjectFile))
-    {
-        var found = await mirror.DetectProjectAsync(branch, source, ct);
-        if (found?.Project is null)
-            return Results.BadRequest($"Nao foi encontrado nenhum projeto web (.csproj de ASP.NET) no branch '{branch}'. " +
-                "Se o projeto tem uma estrutura invulgar, indique 'projectFile' (e 'solutionFile') no ci.json.");
-        store.Update(c =>
-        {
-            if (string.IsNullOrWhiteSpace(c.ProjectFile))
-            {
-                c.ProjectFile = found.Project;
-                if (string.IsNullOrWhiteSpace(c.SolutionFile)) c.SolutionFile = found.Solution ?? "";
-            }
-        });
-    }
-
-    // Sin ruta explicita se usa la convencion por defecto C:\inetpub\wwwroot\deploys\<env> (dentro del
-    // arbol de IIS), y se guarda en ci.json para que servicio y engine resuelvan la misma carpeta.
-    var sitePath = (req.SitePath ?? "").Trim();
-    if (sitePath.Length == 0) sitePath = CiStore.DefaultSitePath(name);
-    var (okPath, pathError) = EnvValidation.ValidateSitePath(sitePath, cfg0.Environments);
-    if (!okPath) return Results.BadRequest(pathError);
-
-    var (okHost, hostHeader, hostError) = EnvValidation.ValidateHostName(req.HostHeader);
-    if (!okHost) return Results.BadRequest(hostError);
-
-    string? error = null;
-    var cfg = store.Update(c =>
-    {
-        if (c.Environments.Any(e => e.Name == name)) { error = $"Ja existe o ambiente '{name}'."; return; }
-        var (okUnique, uniqueError) = EnvValidation.ValidateHostUnique(hostHeader, c.Environments);
-        if (!okUnique) { error = uniqueError; return; }
-        var port = req.Port ?? Enumerable.Range(8090, 200).First(p => c.Environments.All(e => e.Port != p) && PortProbe.IsFree(p));
-        if (c.Environments.Any(e => e.Port == port)) { error = $"A porta {port} já está a ser usada por outro ambiente."; return; }
-
-        var siteName = CiStore.DefaultSiteName(name);
-        if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.SiteName) ? CiStore.DefaultSiteName(e.Name) : e.SiteName) == siteName))
-        { error = $"O site IIS '{siteName}' já está a ser usado por outro ambiente."; return; }
-        if (c.Environments.Any(e => (string.IsNullOrWhiteSpace(e.AppPoolName) ? CiStore.DefaultSiteName(e.Name) : e.AppPoolName) == siteName))
-        { error = $"O pool IIS '{siteName}' já está a ser usado por outro ambiente."; return; }
-
-        c.Environments.Add(new EnvConfig
-        {
-            Name = name,
-            Branch = branch,
-            Source = source,
-            Port = port,
-            Configuration = !string.IsNullOrWhiteSpace(req.Configuration) ? req.Configuration
-                : !string.IsNullOrWhiteSpace(template?.Configuration) ? template!.Configuration
-                : "Desenvolvimento",
-            HealthPath = !string.IsNullOrWhiteSpace(template?.HealthPath) ? template!.HealthPath : "/",
-            AutoDeploy = req.AutoDeploy ?? template?.AutoDeploy ?? true,
-            SitePath = sitePath,
-            HostHeader = hostHeader,
-            ExcludeFromPublish = [.. template?.ExcludeFromPublish ?? []],
-        });
-    });
-    if (error is not null) return Results.Conflict(error);
-    if (template is not null)
-    {
-        // The environment's own config transform (connection strings, etc.) travels with the copy.
-        var src = Path.Combine(store.Root, "envs", template.Name, "Web.local.config");
-        var dstDir = Path.Combine(store.Root, "envs", name);
-        if (File.Exists(src))
-        {
-            Directory.CreateDirectory(dstDir);
-            File.Copy(src, Path.Combine(dstDir, "Web.local.config"), overwrite: true);
-        }
-    }
-    var env = cfg.Environments.First(e => e.Name == name);
-    queue.Enqueue(name, JobKind.Deploy, "manual");
-    return Results.Ok(env);
-});
-
-api.MapPut("/envs/{name}", (string name, EnvRequest req, Mirror mirror) =>
-{
-    // The IIS site/pool name is fixed once the env exists (Decision 7): reject any attempt to change it.
-    if (req.SiteName is not null || req.AppPoolName is not null)
-    {
-        var current = store.Load().Environments.FirstOrDefault(e => e.Name == name);
-        if (current is null) return Results.NotFound();
-        var curSite = string.IsNullOrWhiteSpace(current.SiteName) ? CiStore.DefaultSiteName(current.Name) : current.SiteName;
-        var curPool = string.IsNullOrWhiteSpace(current.AppPoolName) ? CiStore.DefaultSiteName(current.Name) : current.AppPoolName;
-        if ((req.SiteName is not null && req.SiteName.Trim() != curSite) ||
-            (req.AppPoolName is not null && req.AppPoolName.Trim() != curPool))
-            return Results.BadRequest("O nome do site/pool do IIS não pode ser alterado depois de criado.");
-    }
-
-    EnvConfig? env = null;
-    string? error = null;
-    store.Update(c =>
-    {
-        env = c.Environments.FirstOrDefault(e => e.Name == name);
-        if (env is null) return;
-        var branch = req.Branch ?? env.Branch;
-        var source = req.Source ?? env.Source;
-        if (mirror.Find(branch, source) is null) { error = $"O branch '{branch}' nao existe ({source})."; return; }
-        if (req.SitePath is not null)
-        {
-            var sitePath = req.SitePath.Trim();
-            var (okPath, pathError) = EnvValidation.ValidateSitePath(sitePath, c.Environments.Where(e => e.Name != name));
-            if (!okPath) { error = pathError; return; }
-            env.SitePath = sitePath;
-        }
-        if (req.Port is not null && req.Port.Value != env.Port)
-        {
-            var port = req.Port.Value;
-            if (port is < 1 or > 65535) { error = $"Porta invalida: {port}."; return; }
-            if (c.Environments.Any(e => e.Name != name && e.Port == port))
-            { error = $"A porta {port} já está a ser usada por outro ambiente."; return; }
-            env.Port = port;
-        }
-        env.Branch = branch;
-        env.Source = source;
-        if (!string.IsNullOrWhiteSpace(req.Configuration)) env.Configuration = req.Configuration;
-        if (req.AutoDeploy is not null) env.AutoDeploy = req.AutoDeploy.Value;
-        if (req.HostHeader is not null)
-        {
-            var (okHost, hostHeader, hostError) = EnvValidation.ValidateHostName(req.HostHeader);
-            if (!okHost) { error = hostError; return; }
-            var (okUnique, uniqueError) = EnvValidation.ValidateHostUnique(hostHeader, c.Environments.Where(e => e.Name != name));
-            if (!okUnique) { error = uniqueError; return; }
-            env.HostHeader = hostHeader;
-        }
-    });
-    if (env is null) return Results.NotFound();
-    return error is null ? Results.Ok(env) : Results.BadRequest(error);
-});
+api.MapPut("/envs/{name}", (string name, EnvRequest req, PanelService panel) => ToHttp(panel.UpdateEnv(name, req)));
 
 api.MapDelete("/envs/{name}", (string name, PanelService panel) => ToHttp(panel.Enqueue(name, JobKind.Purge)));
 
@@ -398,7 +169,7 @@ api.MapGet("/jobs", (string? env, JobQueue queue) => queue.Recent(env));
 api.MapGet("/jobs/{id}/log", (string id, JobQueue queue) =>
     queue.Get(id) is null ? Results.NotFound() : Results.Text(queue.ReadLog(id)));
 
-// Painel Blazor (pre-visualizacao em /v2). As paginas exigem sessao: sem ela vao para o login do painel classico.
+// Painel (Blazor): / e o resto das paginas exigem sessao; sem ela vao para /login. O painel antigo fica em /classico/.
 app.MapStaticAssets();
 app.MapRazorComponents<PonteCICD.Components.App>().AddInteractiveServerRenderMode();
 
@@ -419,8 +190,13 @@ catch (Exception ex) when (ex is System.Net.Sockets.SocketException or Microsoft
 
 bool EnvExists(string name) => store.Load().Environments.Any(e => e.Name == name);
 
-static IResult ToHttp(EnqueueResult r) =>
-    r.NotFound ? Results.NotFound() : r.Conflict is not null ? Results.Conflict(r.Conflict) : Results.Ok(r.Job);
+static IResult ToHttp<T>(OpResult<T> r) => r.Error switch
+{
+    OpError.NotFound => Results.NotFound(),
+    OpError.Invalid => Results.BadRequest(r.Message),
+    OpError.Conflict => Results.Conflict(r.Message),
+    _ => Results.Ok(r.Value),
+};
 
 static bool IsLoopbackUrl(string url) =>
     Uri.TryCreate(url.Replace("+", "wildcard").Replace("*", "wildcard"), UriKind.Absolute, out var uri)
@@ -448,15 +224,3 @@ static bool IsElevated()
         return false;
     }
 }
-
-record SettingsRequest(int? PollIntervalSec);
-
-record PublishRulesRequest(List<string?>? All, Dictionary<string, List<string?>>? Environments);
-
-record ProjectRequest(
-    string? RepoUrl, string? SolutionFile, string? ProjectFile, string? PackagesSource, string? LocalRepoPath,
-    string? TokenUser, string? Token, bool? ClearToken);
-
-record EnvRequest(
-    string? Name, string? Branch, string? Source, int? Port, string? Configuration, bool? AutoDeploy,
-    string? SitePath, string? SiteName, string? AppPoolName, string? HostHeader, string? CopyFrom);

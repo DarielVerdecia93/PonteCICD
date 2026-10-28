@@ -1,4 +1,4 @@
-@page "/v2"
+@page "/"
 @attribute [Authorize]
 @implements IDisposable
 @inject PanelService Panel
@@ -7,6 +7,8 @@
 @inject Notifier Notifier
 @inject UserStore Users
 @inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 
 <PageTitle>Ponte CI/CD</PageTitle>
@@ -28,10 +30,10 @@
                Class="mr-2 d-none d-sm-flex">Procurar alterações</MudButton>
     <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_fetching" OnClick="FetchAsync" aria-label="Procurar alterações"
                    Class="d-flex d-sm-none" />
-    @* Ainda nao migrado: cria-se no painel classico. *@
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="/" Class="d-none d-sm-flex">Novo ambiente</MudButton>
-    <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" Href="/" aria-label="Novo ambiente"
-                   Size="Size.Small" Class="d-flex d-sm-none" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewEnvAsync"
+               Disabled="_state is null" Class="d-none d-sm-flex">Novo ambiente</MudButton>
+    <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" OnClick="NewEnvAsync" aria-label="Novo ambiente"
+                   Disabled="_state is null" Size="Size.Small" Class="d-flex d-sm-none" />
 </SectionContent>
 
 @if (_state is null)
@@ -47,8 +49,9 @@ else
     @if (_defaultPassword)
     {
         <MudAlert Severity="Severity.Error" Class="mb-4">
-            <b>Esta conta ainda usa a palavra-passe predefinida de uma versão anterior.</b> Altere-a para proteger o painel
-            (<MudLink Href="/">painel clássico</MudLink> → Alterar palavra-passe).
+            <b>Esta conta ainda usa a palavra-passe predefinida de uma versão anterior.</b> Altere-a para proteger o painel.
+            <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" Class="ml-2"
+                       OnClick="() => PasswordDialog.ShowAsync(Dialogs)">Alterar agora</MudButton>
         </MudAlert>
     }
     @if (!_state.IisAvailable)
@@ -65,7 +68,9 @@ else
     @if (!_state.ProjectConfigured)
     {
         <MudAlert Severity="Severity.Info" Class="mb-4">
-            Ainda não há repositório configurado: indique-o no <MudLink Href="/">painel clássico</MudLink> (Acesso ao repositório).
+            Ainda não há repositório configurado.
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="ml-2"
+                       OnClick="() => ProjectDialog.ShowAsync(Dialogs)">Configurar acesso ao repositório</MudButton>
         </MudAlert>
     }
 
@@ -77,7 +82,9 @@ else
     {
         <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-4">
             <MudText Class="mud-text-secondary">Ainda não há ambientes.</MudText>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/">Criar o primeiro no painel clássico</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewEnvAsync">
+                Criar o primeiro escolhendo uma branch
+            </MudButton>
         </MudPaper>
     }
     else
@@ -85,7 +92,7 @@ else
         <MudStack Spacing="3">
             @foreach (var env in _state.Environments)
             {
-                <EnvCard @key="env.Name" Env="env" Changed="RefreshAsync" ShowLog="ShowLogAsync" />
+                <EnvCard @key="env.Name" Env="env" State="_state" Changed="RefreshAsync" ShowLog="ShowLogAsync" />
             }
         </MudStack>
     }
@@ -144,6 +151,8 @@ else
     static readonly int[] PageSizes = [10, 25, 50];
 
     [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+    /// <summary>Aviso a mostrar depois de recarregar (ex.: palavra-passe alterada).</summary>
+    [SupplyParameterFromQuery(Name = "aviso")] public string? Aviso { get; set; }
 
     readonly CancellationTokenSource _cts = new();
     // Estado de cada execucao na ultima carga: avisa quando uma acaba.
@@ -169,8 +178,18 @@ else
     {
         if (AuthState is not null && (await AuthState).User.Identity?.Name is { } name)
             _defaultPassword = Users.Get(name)?.IsDefaultPassword == true;
+        if (Aviso == "palavra-passe")
+        {
+            Snackbar.Add("Palavra-passe alterada. As outras sessões foram terminadas.", Severity.Success);
+            Nav.NavigateTo("/", replace: true);
+        }
         await RefreshAsync();
         _ = WatchAsync(_cts.Token);
+    }
+
+    async Task NewEnvAsync()
+    {
+        if (_state is not null && await EnvDialog.ShowAsync(Dialogs, _state, null, EnvDialogMode.New)) await RefreshAsync();
     }
 
     // Recarrega quando o servico avisa de uma alteracao (Notifier) e, de qualquer modo, a cada 5 s: ha coisas que o

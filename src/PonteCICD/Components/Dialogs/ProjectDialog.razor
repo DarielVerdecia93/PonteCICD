@@ -1,0 +1,117 @@
+@inject ProjectService Project
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_url" Label="URL do repositório (Azure DevOps ou GitHub, HTTPS)" Variant="Variant.Outlined"
+                          Placeholder="https://dev.azure.com/organizacao/projeto/_git/repositorio" Immediate="true" AutoFocus="true"
+                          spellcheck="false" />
+            <MudTextField @bind-Value="_token" Label="Token de acesso (PAT)" InputType="InputType.Password" Variant="Variant.Outlined"
+                          Immediate="true" Placeholder="@(_hasToken ? "Token guardado (deixe em branco para o manter)" : "Cole aqui o token")"
+                          HelperText="Azure DevOps: User settings → Personal access tokens (permissão Code: Read). GitHub: Settings → Developer settings → token com acesso de leitura ao repositório. Fica cifrado nesta máquina; nunca é guardado no ci.json." />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Não precisa de ter o código descarregado nem de indicar solução ou projeto: o painel lê as branches diretamente do
+                repositório e deteta o projeto web de cada branch ao criar o ambiente.
+            </MudText>
+            @if (_busy)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            @if (_message is not null)
+            {
+                <MudAlert Severity="_severity" Dense="true" role="status">@_message</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Disabled="_busy" OnClick="TestAsync">Testar ligação</MudButton>
+        @if (_hasToken)
+        {
+            <MudButton Color="Color.Error" Disabled="_busy" OnClick="ClearTokenAsync">Remover token</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => Dialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveAsync">Guardar e ler branches</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance Dialog { get; set; } = default!;
+
+    string _url = "", _token = "";
+    bool _hasToken, _busy;
+    string? _message;
+    Severity _severity;
+
+    public static Task ShowAsync(IDialogService dialogs) =>
+        dialogs.ShowAsync<ProjectDialog>("Acesso ao repositório", new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+    protected override void OnInitialized()
+    {
+        var p = Project.Get();
+        _url = p.RepoUrl;
+        _hasToken = p.HasToken;
+    }
+
+    void Show(Severity severity, string? message) => (_severity, _message) = (severity, message);
+
+    ProjectRequest Request(bool clearToken = false) =>
+        new(_url, null, null, null, null, null, clearToken ? "" : _token, clearToken ? true : null);
+
+    async Task TestAsync()
+    {
+        _busy = true;
+        Show(Severity.Info, "A testar a ligação…");
+        try
+        {
+            var r = await Project.TestAsync(Request(), CancellationToken.None);
+            if (r.Ok) Show(Severity.Success, $"Ligação OK ({r.Value} branches visíveis).");
+            else Show(Severity.Error, r.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    async Task SaveAsync()
+    {
+        _busy = true;
+        Show(Severity.Info, "A guardar e a ler as branches do repositório… (pode demorar alguns segundos)");
+        try
+        {
+            var r = await Project.SaveAsync(Request());
+            if (!r.Ok) { Show(Severity.Error, r.Message); return; }
+            if (r.Value!.Error is { } error) { Show(Severity.Warning, $"Guardado, mas não foi possível ler o repositório: {error}"); return; }
+            Snackbar.Add(r.Value.Pending ? "Guardado: o repositório é grande e continua a ser lido…"
+                : $"Ligado ao repositório: {r.Value.Branches} branches encontradas.", Severity.Success);
+            Dialog.Close();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    async Task ClearTokenAsync()
+    {
+        var ok = await Dialogs.ShowMessageBoxAsync("Remover o token guardado?",
+            "As branches deixam de estar disponíveis e a cópia local do repositório é apagada, até indicar outro token.",
+            yesText: "Remover", cancelText: "Cancelar");
+        if (ok != true) return;
+        _busy = true;
+        try
+        {
+            var r = await Project.SaveAsync(Request(clearToken: true));
+            if (!r.Ok) { Show(Severity.Error, r.Message); return; }
+            Snackbar.Add("Token removido: as branches deixaram de estar disponíveis.", Severity.Success);
+            Dialog.Close();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
