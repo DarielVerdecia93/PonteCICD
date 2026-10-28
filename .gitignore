@@ -1,11 +1,15 @@
 # ---------------------------------------------------------------------------
 # Ponte CI/CD — .gitignore
 # Se versiona: codigo del servicio (src\PonteCICD), motor PowerShell (engine\),
-# scripts, README y ci.json (config base, sin credenciales).
+# scripts y README. ci.json NO: es la config de cada maquina (repo, ambientes, rutas).
 # NO se versiona: artefactos de build, estado de runtime y secretos.
 # ---------------------------------------------------------------------------
 
 # --- Secretos y config local ------------------------------------------------
+# ci.json lo crea y edita el servicio en cada maquina (la plantilla inicial es installer\ci.template.json).
+/ci.json
+/ci.json.tmp
+/ci.json.backup
 # Las transformaciones Web.local.config llevan connection strings: nunca subir.
 Web.local.config
 **/Web.local.config
