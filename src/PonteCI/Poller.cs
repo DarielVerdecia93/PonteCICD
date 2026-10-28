@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 /// <summary>
 /// Detects new commits and decides when to deploy:
@@ -12,6 +12,7 @@ namespace LegadosCI;
 /// </summary>
 public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifier notifier, IisStateProbe probe, ILogger<Poller> log) : BackgroundService
 {
+    public const int MinPollSec = 10;
     static readonly TimeSpan Tick = TimeSpan.FromSeconds(2);
 
     // env -> (commit waiting to be deployed, when it was first seen)
@@ -29,15 +30,16 @@ public sealed class Poller(CiStore store, Mirror mirror, JobQueue queue, Notifie
         StartDeployedSites();
         using var watcher = WatchLocalRepository();
 
-        var nextRemoteCheck = DateTimeOffset.Now;
+        var lastRemoteCheck = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (DateTimeOffset.Now >= nextRemoteCheck)
+                // The interval is re-read every tick, so changing it in the panel applies at once.
+                if (DateTimeOffset.Now >= lastRemoteCheck.AddSeconds(Math.Max(MinPollSec, store.Load().PollIntervalSec)))
                 {
+                    lastRemoteCheck = DateTimeOffset.Now;
                     await mirror.SyncRemoteAsync(force: false, stoppingToken);
-                    nextRemoteCheck = DateTimeOffset.Now.AddSeconds(Math.Max(10, store.Load().PollIntervalSec));
                 }
                 if (await _localChanged.WaitAsync(Tick, stoppingToken))
                 {

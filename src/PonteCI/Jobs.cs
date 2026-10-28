@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 public enum JobKind { Deploy, Rollback, Start, Stop, Restart, Purge }
 

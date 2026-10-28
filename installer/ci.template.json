@@ -1,0 +1,21 @@
+{
+  "repoUrl": "",
+  "solutionFile": "",
+  "projectFile": "",
+  "packagesSource": "",
+  "msbuild": "",
+  "excludeFromPublish": [],
+  "includeInPublish": [],
+  "preserve": [
+    "UploadFiles"
+  ],
+  "healthTimeoutSec": 240,
+  "keepBackups": 20,
+  "keepReleases": 5,
+  "localRepoPath": "",
+  "pollIntervalSec": 20,
+  "quietSec": 15,
+  "listenUrl": "http://localhost:5080",
+  "workDir": "",
+  "environments": []
+}

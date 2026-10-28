@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 public static class BranchSource
 {

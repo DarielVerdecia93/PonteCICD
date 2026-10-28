@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Legados CI</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<title>Ponte CI/CD</title>
 <style>
   /* ---- Windows 11 / Fluent design tokens ---- */
   :root {
@@ -51,7 +52,7 @@
     backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
   }
   header h1 { font-size: 18px; font-weight: 600; margin: 0; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.01em; }
-  header h1::before { content: ""; display: inline-block; width: 10px; height: 18px; margin-right: 9px; vertical-align: -3px; border-radius: 3px; background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 60%, var(--local))); }
+  header h1::before { content: ""; display: inline-block; width: 24px; height: 24px; margin-right: 10px; vertical-align: -6px; background: url(/icon.svg) center / contain no-repeat; }
   .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: .2s; }
   .live.on i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
@@ -171,13 +172,24 @@
   .branch .bn { font-family: var(--mono); font-size: 13px; }
   .branch .when { font-size: 12px; color: var(--faint); text-align: right; }
   .branch .sub { grid-column: 1 / -1; font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .picker-foot { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .picker-foot .grow { flex: 1; }
-  .picker-foot label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
-  .picker-foot select { border-radius: var(--r-sm); }
-  .picker-foot input[name=name] { width: 170px; border-radius: var(--r-sm); }
-  .picker-foot .sitepath-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; align-items: flex-start; }
-  .picker-foot .sitepath-field input { width: 300px; max-width: 100%; border-radius: var(--r-sm); }
+  .picker-foot { padding: 14px 18px 16px; border-top: 1px solid var(--border); display: grid; gap: 14px; }
+  .picked { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 22px; }
+  .picked code { font-family: var(--mono); background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 2px 8px; }
+  .foot-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px 14px; align-items: end; }
+  .foot-grid .f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+  .foot-grid .f input:not([type=checkbox]), .foot-grid .f select { width: 100%; box-sizing: border-box; border-radius: var(--r-sm); }
+  .foot-grid .f-name { grid-column: span 3; }
+  .foot-grid .f-cfg { grid-column: span 3; }
+  .foot-grid .f-path { grid-column: 1 / -1; }
+  .foot-grid .f-port { grid-column: span 2; }
+  .foot-grid .f-auto { grid-column: span 4; flex-direction: row; align-items: center; gap: 8px; padding-bottom: 6px; }
+  .foot-grid .hint { font-size: 11px; color: var(--faint); }
+  .foot-grid [hidden] { display: none; }
+  .foot-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  @media (max-width: 560px) { .foot-grid > * { grid-column: 1 / -1 !important; } }
+
+  #settings { width: min(420px, calc(100vw - 32px)); }
+  #settings .foot-grid { grid-template-columns: 1fr; }
 
   #toasts { position: fixed; right: 18px; bottom: 18px; display: grid; gap: 10px; z-index: 10; }
   .toast { background: var(--mica); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--r-md); padding: 12px 15px; box-shadow: var(--shadow-flyout); max-width: 380px; font-size: 13px; backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); animation: toastin .25s cubic-bezier(.1,.9,.2,1); }
@@ -190,13 +202,15 @@
 </head>
 <body>
 <header>
-  <h1>Legados CI</h1>
+  <h1>Ponte CI/CD</h1>
   <span class="live" id="live"><i></i><span>a ligar…</span></span>
   <span class="meta" id="meta"></span>
+  <button id="settingsBtn" title="Frequência de atualização" aria-label="Frequência de atualização">⚙</button>
   <button id="fetch" title="Verificar agora o remoto e o repositório local">Procurar alterações</button>
   <button class="primary" id="newEnv">+ Novo ambiente</button>
 </header>
 <main>
+  <div class="card err" id="iisWarn" hidden style="padding:12px 16px"></div>
   <section>
     <h2>Ambientes</h2>
     <div class="envs" id="envs"></div>
@@ -211,7 +225,7 @@
   </section>
 
   <section class="card" id="logCard" hidden>
-    <h2><span id="logTitle">Log</span><span class="grow"></span><button id="closeLog">Cerrar</button></h2>
+    <h2><span id="logTitle">Log</span><span class="grow"></span><button id="closeLog">Fechar</button></h2>
     <pre class="log" id="log"></pre>
   </section>
 </main>
@@ -230,23 +244,49 @@
     </div>
     <div class="branch-list" id="branchList"></div>
     <div class="picker-foot" id="pickerFoot">
-      <span class="muted" id="pickedLabel">Nenhuma branch selecionada</span>
-      <span class="grow"></span>
-      <span data-new-only><input name="name" placeholder="nome do ambiente"></span>
-      <label class="muted sitepath-field" title="vazio = gerido automaticamente em envs\&lt;nome&gt;; o site real fica em &lt;base&gt;\releases\&lt;versao&gt;">Pasta base do ambiente (IIS)
-        <input name="sitePath" placeholder="Pasta base do ambiente (opcional) - ex.: C:\inetpub\wwwroot\deploys\develop">
-      </label>
-      <label class="muted">Configuração
-        <select name="configuration" aria-label="Configuração de compilação"><option>Desenvolvimento</option></select>
-      </label>
-      <label class="muted" title="Porta HTTP onde o IIS serve o site deste ambiente">Porta
-        <input name="port" type="number" min="1" max="65535" inputmode="numeric" placeholder="auto" style="width:80px">
-      </label>
-      <label data-new-only class="muted"><input type="checkbox" name="autoDeploy" checked> auto-deploy</label>
-      <button value="cancel" formnovalidate>Cancelar</button>
-      <button class="primary" id="pickerOk" value="ok" disabled>Criar e implantar</button>
+      <div class="picked"><span class="muted" id="pickedLabel">Nenhuma branch selecionada</span></div>
+      <div class="foot-grid">
+        <label class="f f-name" data-new-only>Nome do ambiente
+          <input name="name" placeholder="ex.: develop" autocomplete="off">
+        </label>
+        <label class="f f-cfg">Configuração de compilação
+          <select name="configuration" aria-label="Configuração de compilação"><option>Desenvolvimento</option></select>
+        </label>
+        <label class="f f-path" title="vazio = gerido automaticamente em envs\&lt;nome&gt;; o site real fica em &lt;base&gt;\releases\&lt;versao&gt;">Pasta base do ambiente (IIS) <span class="hint">opcional</span>
+          <input name="sitePath" placeholder="ex.: C:\inetpub\wwwroot\deploys\develop" autocomplete="off">
+        </label>
+        <label class="f f-port" title="Porta HTTP onde o IIS serve o site deste ambiente">Porta
+          <input name="port" type="number" min="1" max="65535" inputmode="numeric" placeholder="auto">
+        </label>
+        <label class="f f-auto" data-new-only title="Implantar automaticamente quando a branch receber novos commits"><input type="checkbox" name="autoDeploy" checked> Auto-deploy ao detetar novos commits</label>
+      </div>
+      <div class="foot-actions">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button class="primary" id="pickerOk" value="ok" disabled>Criar e implantar</button>
+      </div>
     </div>
     <div class="err" id="pickerErr" style="padding:0 16px 12px"></div>
+  </form>
+</dialog>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <div class="picker-head"><b>Frequência de atualização</b></div>
+    <div class="picker-foot">
+      <div class="foot-grid">
+        <label class="f" style="grid-column:1/-1" title="De quanto em quanto tempo o serviço consulta o remoto (git) à procura de commits novos. Guardado no ci.json.">Verificar o remoto a cada
+          <select name="poll"></select>
+        </label>
+        <label class="f" style="grid-column:1/-1" title="De quanto em quanto tempo este painel se atualiza (estado do IIS, execuções). Guardado neste navegador.">Atualizar o painel a cada
+          <select name="ui"></select>
+        </label>
+      </div>
+      <div class="err" id="settingsErr"></div>
+      <div class="foot-actions">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button class="primary" value="ok">Guardar</button>
+      </div>
+    </div>
   </form>
 </dialog>
 
@@ -372,9 +412,13 @@ function notifyFinished() {
 async function refresh() {
   try {
     [state, jobs] = await Promise.all([api('GET', '/api/state'), api('GET', '/api/jobs')]);
-    $('#meta').innerHTML = `remoto verificado ${ago(state.lastCheck)} (a cada ${state.pollIntervalSec}s)` +
-      (state.localRepoPath ? ` · a vigiar repo local` : '') +
-      (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
+    renderMeta();
+    const iisWarn = $('#iisWarn');
+    iisWarn.hidden = state.iisAvailable !== false;
+    if (!iisWarn.hidden)
+      iisWarn.innerHTML = `<b>Não foi possível consultar o IIS</b>: os ambientes aparecem como parados mesmo que estejam ativos.` +
+        (state.iisError ? `<br>${esc(state.iisError)}` : '') +
+        `<br>Se corre o PonteCI numa consola, abra-a como administrador ou use o serviço do Windows.`;
     $('#envs').innerHTML = state.environments.length
       ? state.environments.map(renderEnv).join('')
       : '<div class="card empty">Ainda não há ambientes.<br><br><button class="primary" onclick="openPicker()">+ Criar o primeiro escolhendo uma branch</button></div>';
@@ -386,6 +430,19 @@ async function refresh() {
   }
 }
 
+function renderMeta() {
+  if (!state) return;
+  $('#meta').innerHTML = `remoto verificado ${ago(state.lastCheck)} (a cada ${fmtSecs(state.pollIntervalSec)})` +
+    (state.localRepoPath ? ` · a vigiar repo local` : '') +
+    (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
+}
+const fmtSecs = s => s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`;
+const POLL_OPTIONS = [10, 20, 30, 60, 120, 300, 600];
+const UI_OPTIONS = [3, 5, 10, 15, 30, 60];
+let uiSecs = (() => { try { return Number(localStorage.getItem('uiRefreshSec')) || 5; } catch { return 5; } })();
+let uiTimer = null;
+const restartUiTimer = () => { clearInterval(uiTimer); uiTimer = setInterval(refresh, uiSecs * 1000); };
+
 let refreshTimer = null;
 const scheduleRefresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
 
@@ -396,7 +453,8 @@ function connect() {
   es.onmessage = scheduleRefresh;
   es.onerror = () => { $('#live').className = 'live'; $('#live span').textContent = 'a reconectar…'; };
 }
-setInterval(refresh, 15000);
+restartUiTimer();
+setInterval(renderMeta, 1000);
 setInterval(() => document.querySelectorAll('[data-countdown]').forEach(el => {
   el.textContent = Math.max(0, Math.round((new Date(el.dataset.countdown) - Date.now()) / 1000)) + 's';
 }), 1000);
@@ -565,7 +623,7 @@ $('#pickerForm').addEventListener('submit', async ev => {
   const portVal = f.port.value.trim();
   const port = portVal === '' ? undefined : parseInt(portVal, 10);
   if (port !== undefined && (!Number.isInteger(port) || port < 1 || port > 65535)) {
-    $('#pickerErr').textContent = 'Porta invalida (1-65535).'; return;
+    $('#pickerErr').textContent = 'Porta inválida (1-65535).'; return;
   }
   try {
     if (picker.mode === 'edit') {
@@ -596,6 +654,33 @@ $('#fetch').onclick = async () => {
   catch (err) { toast(esc(err.message), 'bad'); }
   finally { $('#fetch').disabled = false; }
 };
+
+// ---------------------------------------------------------------- frequência de atualização
+function fillSelect(sel, values, current) {
+  const all = [...new Set([...values, current])].sort((a, b) => a - b);
+  sel.innerHTML = all.map(v => `<option value="${v}" ${v === current ? 'selected' : ''}>${fmtSecs(v)}</option>`).join('');
+}
+$('#settingsBtn').onclick = () => {
+  const f = $('#settingsForm');
+  fillSelect(f.poll, POLL_OPTIONS, state?.pollIntervalSec ?? 20);
+  fillSelect(f.ui, UI_OPTIONS, uiSecs);
+  $('#settingsErr').textContent = '';
+  $('#settings').showModal();
+};
+$('#settingsForm').addEventListener('submit', async ev => {
+  if (ev.submitter?.value !== 'ok') return;
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api('PUT', '/api/settings', { pollIntervalSec: Number(f.poll.value) });
+    uiSecs = Number(f.ui.value);
+    try { localStorage.setItem('uiRefreshSec', String(uiSecs)); } catch { /* sem armazenamento: vale só até recarregar */ }
+    restartUiTimer();
+    $('#settings').close();
+    refresh();
+    toast(`Remoto a cada ${fmtSecs(Number(f.poll.value))} · painel a cada ${fmtSecs(uiSecs)}`, 'ok');
+  } catch (err) { $('#settingsErr').textContent = err.message; }
+});
 
 refresh();
 connect();

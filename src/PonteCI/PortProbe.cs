@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace LegadosCI;
+namespace PonteCI;
 
 /// <summary>
 /// Checks whether a TCP port can be bound right now. Used only to auto-pick a free port for a new
