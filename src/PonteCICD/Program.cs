@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
 using PonteCICD;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -16,11 +17,20 @@ var root = builder.Configuration["CiRoot"];
 if (string.IsNullOrWhiteSpace(root)) root = FindCiRoot(AppContext.BaseDirectory);
 var store = new CiStore(root);
 var gitAuth = new GitAuth(store);
+var users = new UserStore(store);
 builder.WebHost.UseUrls(store.Load().ListenUrl);
 
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton(store);
 builder.Services.AddSingleton(gitAuth);
+builder.Services.AddSingleton(users);
+builder.Services.AddSingleton<LoginThrottle>();
+// Chaves da cookie de sessao persistidas (cifradas com DPAPI da maquina): a sessao sobrevive a reinicios do servico.
+builder.Services.AddDataProtection()
+    .SetApplicationName("PonteCICD")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(root, "secrets", "keys")))
+    .ProtectKeysWithDpapi(protectToLocalMachine: true);
+builder.Services.AddPanelAuth();
 builder.Services.AddSingleton<Notifier>();
 builder.Services.AddSingleton<Mirror>();
 builder.Services.AddSingleton<JobQueue>();
@@ -32,6 +42,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Poller>());
 var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Startup self-check (A-8): warn, don't crash, when not elevated or IIS is unavailable; the service
 // then runs in degraded mode (iisAvailable=false) and the panel surfaces it.
@@ -43,7 +55,9 @@ app.UseStaticFiles();
         log.LogWarning("IIS nao disponivel (preflight): instale o IIS (Web-Server, Web-Mgmt-Console) e reinicie. Modo degradado.");
 }
 
-var api = app.MapGroup("/api");
+// Toda a API exige sessao, exceto o login (ver AuthEndpoints).
+var api = app.MapGroup("/api").RequireAuthorization();
+api.MapAuth();
 
 api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisStateProbe probe, CancellationToken ct) =>
 {

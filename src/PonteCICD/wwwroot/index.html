@@ -56,9 +56,18 @@
   .live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: .2s; }
   .live.on i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
-  header .meta { color: var(--muted); font-size: 12px; margin-right: auto; }
+  header .live { margin-right: auto; }
+  /* Estado da verificação do remoto: pastilha flutuante discreta (não ocupa espaço nem bloqueia cliques). */
+  .statusbar { position: fixed; left: 12px; bottom: 12px; z-index: 5; max-width: calc(100vw - 24px); display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--mica); border: 1px solid var(--border); font-size: 11px; line-height: 1.5; color: var(--faint); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); opacity: .7; cursor: default; transition: opacity .15s; white-space: nowrap; overflow: hidden; }
+  .statusbar:empty { display: none; }
+  .statusbar:hover, .statusbar:focus, .statusbar.open { opacity: 1; color: var(--muted); box-shadow: var(--shadow-flyout); }
+  .statusbar .full { display: none; }
+  .statusbar:hover .full, .statusbar:focus .full, .statusbar.open .full { display: inline; }
+  .statusbar.bad { opacity: 1; color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+  @media (max-width: 760px) { .statusbar { left: 8px; bottom: 8px; } .statusbar.open .full { white-space: normal; } }
 
   main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 72px; display: grid; gap: 26px; }
+  main > * { min-width: 0; } /* itens do grid podem encolher (tabelas largas fazem scroll no seu contentor) */
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
   h2 .grow { flex: 1; }
 
@@ -196,6 +205,32 @@
   #projectMsg.ok { color: var(--ok); }
   #settings .foot-grid { grid-template-columns: 1fr; }
 
+  /* menu do utilizador */
+  .usermenu { position: relative; }
+  .usermenu > button { display: inline-flex; align-items: center; gap: 8px; padding-left: 5px; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+  .usermenu .menu { display: none; position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; padding: 6px; z-index: 20; background: var(--mica); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-flyout); backdrop-filter: saturate(180%) blur(40px); -webkit-backdrop-filter: saturate(180%) blur(40px); }
+  .usermenu.open .menu { display: block; }
+  .menu .who { padding: 8px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .menu .who b { display: block; font-size: 14px; color: var(--text); }
+  .menu button { display: block; width: 100%; text-align: left; background: transparent; border-color: transparent; box-shadow: none; }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+  .menu button.danger { color: var(--bad); }
+  #login::backdrop { background: rgb(0 0 0 / .55); backdrop-filter: blur(6px); }
+  #login, #password { width: min(400px, calc(100vw - 32px)); }
+  #login .brand { display: flex; align-items: center; gap: 12px; }
+  #login .brand img { width: 36px; height: 36px; }
+  #login .foot-grid, #password .foot-grid { grid-template-columns: 1fr; }
+  #login .foot-actions button, #password .foot-actions button.primary { min-width: 110px; }
+  #pwdWarn button { margin-left: 8px; }
+  @media (max-width: 760px) {
+    header .live { margin-right: 0; }
+    .usermenu { order: 1; margin-left: auto; }
+    header #fetch, header #newEnv { order: 2; }
+    .usermenu .uname { display: none; }
+    .usermenu .menu { max-width: calc(100vw - 24px); }
+  }
+
   #toasts { position: fixed; right: 18px; bottom: 18px; display: grid; gap: 10px; z-index: 10; }
   .toast { background: var(--mica); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--r-md); padding: 12px 15px; box-shadow: var(--shadow-flyout); max-width: 380px; font-size: 13px; backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); animation: toastin .25s cubic-bezier(.1,.9,.2,1); }
   @keyframes toastin { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
@@ -209,14 +244,23 @@
 <header>
   <h1>Ponte CI/CD</h1>
   <span class="live" id="live"><i></i><span>a ligar…</span></span>
-  <span class="meta" id="meta"></span>
-  <button id="projectBtn" title="Projeto, repositório e token de acesso">Projeto e acesso</button>
-  <button id="settingsBtn" title="Frequência de atualização" aria-label="Frequência de atualização">⚙</button>
   <button id="fetch" title="Verificar agora o remoto e o repositório local">Procurar alterações</button>
   <button class="primary" id="newEnv">+ Novo ambiente</button>
+  <div class="usermenu" id="userMenu">
+    <button id="userBtn" aria-haspopup="menu" aria-expanded="false" title="Conta e definições"><span class="avatar" id="avatar">?</span><span class="uname" id="uname"></span> ▾</button>
+    <div class="menu" role="menu">
+      <div class="who"><b id="whoName">—</b>Sessão iniciada</div>
+      <button role="menuitem" id="projectBtn">Projeto e acesso ao repositório</button>
+      <button role="menuitem" id="settingsBtn">Frequência de atualização</button>
+      <hr>
+      <button role="menuitem" id="passwordBtn">Alterar palavra-passe</button>
+      <button role="menuitem" id="logoutBtn" class="danger">Terminar sessão</button>
+    </div>
+  </div>
 </header>
 <main>
   <div class="card err" id="iisWarn" hidden style="padding:12px 16px"></div>
+  <div class="card" id="pwdWarn" hidden style="padding:12px 16px;border-left:4px solid var(--bad)"><b>Está a usar a palavra-passe predefinida.</b> Altere-a para proteger o painel. <button class="primary" onclick="openPassword()">Alterar agora</button></div>
   <div class="card" id="projectWarn" hidden style="padding:12px 16px">Ainda não há projeto configurado. <button class="primary" onclick="openProject()">Configurar projeto e acesso</button></div>
   <section>
     <h2>Ambientes</h2>
@@ -225,10 +269,10 @@
 
   <section class="card">
     <h2>Execuções</h2>
-    <table>
+    <div style="overflow-x:auto"><table>
       <thead><tr><th>Início</th><th>Ambiente</th><th>Ação</th><th>Origem</th><th>Commit</th><th>Estado</th><th>Resultado</th></tr></thead>
       <tbody id="jobs"></tbody>
-    </table>
+    </table></div>
   </section>
 
   <section class="card" id="logCard" hidden>
@@ -236,7 +280,8 @@
     <pre class="log" id="log"></pre>
   </section>
 </main>
-<footer style="text-align:center;padding:18px 16px 26px;font-size:12px;color:var(--faint)">Ponte CI/CD · © Magia Technologies Labs</footer>
+<div class="statusbar" id="meta" role="status" aria-live="off"></div>
+<footer style="text-align:center;padding:18px 16px 64px;font-size:12px;color:var(--faint)">Ponte CI/CD · © Magia Technologies Labs</footer>
 
 <dialog id="picker">
   <form method="dialog" id="pickerForm">
@@ -274,6 +319,48 @@
       </div>
     </div>
     <div class="err" id="pickerErr" style="padding:0 16px 12px"></div>
+  </form>
+</dialog>
+
+<dialog id="login">
+  <form method="dialog" id="loginForm">
+    <div class="picker-head"><div class="brand"><img src="/icon.svg" alt=""><b>Ponte CI/CD</b></div></div>
+    <div class="picker-foot">
+      <div class="foot-grid">
+        <label class="f">Utilizador
+          <input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+        </label>
+        <label class="f">Palavra-passe
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+      </div>
+      <div class="err" id="loginErr" role="alert"></div>
+      <div class="foot-actions"><button class="primary" id="loginOk" value="ok">Entrar</button></div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="password">
+  <form method="dialog" id="passwordForm">
+    <div class="picker-head"><b>Alterar palavra-passe</b></div>
+    <div class="picker-foot">
+      <div class="foot-grid">
+        <label class="f">Palavra-passe atual
+          <input name="current" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="f">Nova palavra-passe <span class="hint" style="display:inline">(mínimo 8 caracteres)</span>
+          <input name="next" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label class="f">Repetir a nova palavra-passe
+          <input name="again" type="password" autocomplete="new-password" required>
+        </label>
+      </div>
+      <div class="err" id="passwordErr" role="alert"></div>
+      <div class="foot-actions">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button class="primary" value="ok">Guardar</button>
+      </div>
+    </div>
   </form>
 </dialog>
 
@@ -362,6 +449,10 @@ let state = null, branches = [], jobs = [], openLog = null, knownJobs = new Map(
 
 async function api(method, url, body) {
   const r = await fetch(url, body ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { method });
+  if (r.status === 401 && url !== '/api/auth/login') {
+    showLogin();
+    throw Object.assign(new Error('Sessão expirada: inicie sessão novamente.'), { status: 401 });
+  }
   if (!r.ok) throw new Error((await r.text()).replace(/^"|"$/g, '') || r.statusText);
   return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
 }
@@ -474,15 +565,22 @@ async function refresh() {
     notifyFinished();
     if (openLog) await loadLog();
   } catch (err) {
-    $('#meta').innerHTML = `<span class="err">Sem ligação com o serviço: ${esc(err.message)}</span>`;
+    if (err.status === 401) return;
+    const m = $('#meta'); m.className = 'statusbar bad'; m.title = err.message;
+    m.innerHTML = `<span aria-hidden="true">⚠</span><span>Sem ligação com o serviço</span>`;
   }
 }
 
 function renderMeta() {
   if (!state) return;
-  $('#meta').innerHTML = `remoto verificado ${ago(state.lastCheck)} (a cada ${fmtSecs(state.pollIntervalSec)})` +
-    (state.localRepoPath ? ` · a vigiar repo local` : '') +
-    (state.lastError ? ` · <span class="err">${esc(state.lastError)}</span>` : '');
+  const el = $('#meta');
+  const ago_ = ago(state.lastCheck).replace(/^há /, '');
+  const full = `Remoto verificado ${ago(state.lastCheck)} (a cada ${fmtSecs(state.pollIntervalSec)})` +
+    (state.localRepoPath ? ' · a vigiar repo local' : '') + (state.lastError ? ` · ${state.lastError}` : '');
+  el.className = 'statusbar' + (state.lastError ? ' bad' : '') + (el.classList.contains('open') ? ' open' : '');
+  el.title = full;
+  el.tabIndex = 0;
+  el.innerHTML = `<span aria-hidden="true">${state.lastError ? '⚠' : '↻'}</span><span>${esc(ago_)}</span><span class="full">· ${esc(full)}</span>`;
 }
 const fmtSecs = s => s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`;
 const POLL_OPTIONS = [10, 20, 30, 60, 120, 300, 600];
@@ -495,14 +593,21 @@ let refreshTimer = null;
 const scheduleRefresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
 
 // Live updates (Server-Sent Events) + a slow fallback poll for things the server can't notice (e.g. IIS Express killed by hand).
+let eventSource = null;
 function connect() {
-  const es = new EventSource('/api/events');
+  eventSource?.close();
+  const es = eventSource = new EventSource('/api/events');
   es.onopen = () => { $('#live').className = 'live on'; $('#live span').textContent = 'ao vivo'; };
   es.onmessage = scheduleRefresh;
-  es.onerror = () => { $('#live').className = 'live'; $('#live span').textContent = 'a reconectar…'; };
+  es.onerror = () => {
+    $('#live').className = 'live'; $('#live span').textContent = me ? 'a reconectar…' : 'sem sessão';
+    // Um 401 (sessão terminada) fecha o EventSource para sempre: volta a abrir depois de um tempo.
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => { if (eventSource === es) connect(); }, 4000);
+  };
 }
 restartUiTimer();
 setInterval(renderMeta, 1000);
+$('#meta').addEventListener('click', e => e.currentTarget.classList.toggle('open'));
 setInterval(() => document.querySelectorAll('[data-countdown]').forEach(el => {
   el.textContent = Math.max(0, Math.round((new Date(el.dataset.countdown) - Date.now()) / 1000)) + 's';
 }), 1000);
@@ -773,6 +878,84 @@ $('#projectForm').addEventListener('submit', async ev => {
     refresh();
   } catch (err) { $('#projectMsg').className = 'err'; $('#projectMsg').textContent = err.message; }
 });
+
+// ---------------------------------------------------------------- sessão, menu do utilizador e palavra-passe
+let me = null;
+function applyMe(u) {
+  me = u;
+  $('#avatar').textContent = (u.name || '?').slice(0, 1);
+  $('#uname').textContent = u.name;
+  $('#whoName').textContent = u.name;
+  $('#pwdWarn').hidden = !u.isDefaultPassword;
+}
+function showLogin() {
+  const d = $('#login');
+  if (d.open) return;
+  me = null;
+  $('#userMenu').classList.remove('open');
+  document.querySelectorAll('dialog[open]').forEach(x => x.close());
+  $('#loginErr').textContent = '';
+  $('#loginForm').password.value = '';
+  d.showModal();
+  $('#loginForm').username.focus();
+}
+// O diálogo de login não se fecha com Esc: é obrigatório para usar o painel.
+$('#login').addEventListener('cancel', ev => ev.preventDefault());
+$('#loginForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = ev.target, btn = $('#loginOk');
+  btn.disabled = true; $('#loginErr').textContent = '';
+  try {
+    applyMe(await api('POST', '/api/auth/login', { username: f.username.value, password: f.password.value }));
+    f.password.value = '';
+    $('#login').close();
+    refresh();
+    connect();
+  } catch (err) { $('#loginErr').textContent = err.message; f.password.select(); }
+  finally { btn.disabled = false; }
+});
+
+const userMenu = $('#userMenu');
+$('#userBtn').onclick = ev => {
+  ev.stopPropagation();
+  const open = userMenu.classList.toggle('open');
+  $('#userBtn').setAttribute('aria-expanded', open);
+};
+document.addEventListener('click', ev => {
+  if (!ev.target.closest('#userMenu')) { userMenu.classList.remove('open'); $('#userBtn').setAttribute('aria-expanded', 'false'); }
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') userMenu.classList.remove('open'); });
+// Qualquer opção do menu fecha-o.
+userMenu.querySelector('.menu').addEventListener('click', ev => { if (ev.target.closest('button')) userMenu.classList.remove('open'); });
+
+$('#logoutBtn').onclick = async () => {
+  try { await api('POST', '/api/auth/logout'); } catch { /* já sem sessão */ }
+  showLogin();
+};
+
+function openPassword() {
+  const f = $('#passwordForm');
+  f.reset(); $('#passwordErr').textContent = '';
+  $('#password').showModal();
+  f.current.focus();
+}
+$('#passwordBtn').onclick = openPassword;
+$('#passwordForm').addEventListener('submit', async ev => {
+  if (ev.submitter?.value !== 'ok') return;
+  ev.preventDefault();
+  const f = ev.target;
+  if (f.next.value !== f.again.value) { $('#passwordErr').textContent = 'As novas palavras-passe não coincidem.'; return; }
+  try {
+    applyMe(await api('PUT', '/api/auth/password', { current: f.current.value, new: f.next.value }));
+    $('#password').close();
+    toast('Palavra-passe alterada. As outras sessões foram terminadas.', 'ok');
+  } catch (err) { $('#passwordErr').textContent = err.message; }
+});
+
+// Arranque: há sessão? Se não, mostra o login em vez de uma página vazia.
+(async () => {
+  try { applyMe(await api('GET', '/api/auth/me')); } catch { /* showLogin() já foi chamado em 401 */ }
+})();
 
 refresh();
 connect();
