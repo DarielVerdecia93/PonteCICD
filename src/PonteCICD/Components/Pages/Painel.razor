@@ -1,0 +1,291 @@
+@page "/v2"
+@attribute [Authorize]
+@implements IDisposable
+@inject PanelService Panel
+@inject JobQueue Queue
+@inject Mirror Mirror
+@inject Notifier Notifier
+@inject UserStore Users
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Ponte CI/CD</PageTitle>
+
+<SectionContent SectionName="barra">
+    <span class="ao-vivo d-none d-sm-inline-flex"><i></i>ao vivo</span>
+    <MudSpacer />
+    @if (_state is not null)
+    {
+        <MudTooltip Text="@MetaFull">
+            <span class="@($"verificado d-none d-md-inline-flex {(_state.LastError is null ? "" : "erro")}")">
+                <MudIcon Icon="@(_state.LastError is null ? Icons.Material.Filled.Sync : Icons.Material.Filled.Warning)" Size="Size.Small" />
+                @Ui.Ago(_state.LastCheck).Replace("há ", "")
+            </span>
+        </MudTooltip>
+    }
+    @* No telemovel so os icones. *@
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" Disabled="_fetching" OnClick="FetchAsync"
+               Class="mr-2 d-none d-sm-flex">Procurar alterações</MudButton>
+    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_fetching" OnClick="FetchAsync" aria-label="Procurar alterações"
+                   Class="d-flex d-sm-none" />
+    @* Ainda nao migrado: cria-se no painel classico. *@
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="/" Class="d-none d-sm-flex">Novo ambiente</MudButton>
+    <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" Href="/" aria-label="Novo ambiente"
+                   Size="Size.Small" Class="d-flex d-sm-none" />
+</SectionContent>
+
+@if (_state is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">Não foi possível atualizar o estado: @_error</MudAlert>
+    }
+    @if (_defaultPassword)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <b>Esta conta ainda usa a palavra-passe predefinida de uma versão anterior.</b> Altere-a para proteger o painel
+            (<MudLink Href="/">painel clássico</MudLink> → Alterar palavra-passe).
+        </MudAlert>
+    }
+    @if (!_state.IisAvailable)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <b>Não foi possível consultar o IIS</b>: os ambientes aparecem como parados mesmo que estejam ativos.
+            @if (_state.IisError is not null)
+            {
+                <br />@_state.IisError
+            }
+            <br />Se corre o PonteCICD numa consola, abra-a como administrador ou use o serviço do Windows.
+        </MudAlert>
+    }
+    @if (!_state.ProjectConfigured)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            Ainda não há repositório configurado: indique-o no <MudLink Href="/">painel clássico</MudLink> (Acesso ao repositório).
+        </MudAlert>
+    }
+
+    <div class="secao">
+        <MudText Typo="Typo.overline">Ambientes</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">@_state.Environments.Count</MudText>
+    </div>
+    @if (_state.Environments.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center gap-4">
+            <MudText Class="mud-text-secondary">Ainda não há ambientes.</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/">Criar o primeiro no painel clássico</MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            @foreach (var env in _state.Environments)
+            {
+                <EnvCard @key="env.Name" Env="env" Changed="RefreshAsync" ShowLog="ShowLogAsync" />
+            }
+        </MudStack>
+    }
+
+    <div class="secao mt-8">
+        <MudText Typo="Typo.overline">Execuções</MudText>
+    </div>
+    <MudPaper Outlined="true">
+        <MudTable T="Job" Items="_jobs" Dense="true" Hover="true" Elevation="0" RowsPerPage="10" OnRowClick="RowClickAsync"
+                  RowClass="linha-job" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Início</MudTh>
+                <MudTh>Ambiente</MudTh>
+                <MudTh>Ação</MudTh>
+                <MudTh>Origem</MudTh>
+                <MudTh>Commit</MudTh>
+                <MudTh>Estado</MudTh>
+                <MudTh>Resultado</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Início" Class="nowrap">@Ui.Date(context.StartedAt ?? context.QueuedAt)</MudTd>
+                <MudTd DataLabel="Ambiente">@context.Env</MudTd>
+                <MudTd DataLabel="Ação">@Ui.Action(context.Kind)</MudTd>
+                <MudTd DataLabel="Origem">@context.Trigger</MudTd>
+                <MudTd DataLabel="Commit"><code>@Ui.Short(context.Commit)</code></MudTd>
+                <MudTd DataLabel="Estado">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Ui.StatusColor(context.Status)">@Ui.Status(context.Status)</MudChip>
+                    @if (context.Step is not null)
+                    {
+                        <span class="sec">@context.Step</span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Resultado">@context.Summary</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Class="mud-text-secondary">Sem execuções.</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="Linhas por página:" InfoFormat="{first_item}–{last_item} de {all_items}" PageSizeOptions="PageSizes" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+}
+
+<MudDrawer Open="_logOpen" OpenChanged="LogOpenChanged" Anchor="Anchor.End" Variant="DrawerVariant.Temporary"
+           Width="min(900px, 100vw)" Elevation="4">
+    <MudDrawerHeader Class="align-center gap-2">
+        <MudText Typo="Typo.h6">@LogTitle</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Close" aria-label="Fechar" OnClick="() => LogOpenChanged(false)" />
+    </MudDrawerHeader>
+    <pre class="log" id="job-log">@_logText</pre>
+</MudDrawer>
+
+@code {
+    static readonly int[] PageSizes = [10, 25, 50];
+
+    [CascadingParameter] Task<AuthenticationState>? AuthState { get; set; }
+
+    readonly CancellationTokenSource _cts = new();
+    // Estado de cada execucao na ultima carga: avisa quando uma acaba.
+    readonly Dictionary<string, JobStatus> _known = [];
+    PanelState? _state;
+    List<Job> _jobs = [];
+    string? _error;
+    bool _defaultPassword, _fetching, _refreshing, _again;
+    string? _logJob;
+    string _logText = "";
+    bool _logOpen, _scrollLog;
+
+    string MetaFull => _state is null ? "" :
+        $"Remoto verificado {Ui.Ago(_state.LastCheck)} (a cada {Ui.Secs(_state.PollIntervalSec)})" +
+        (string.IsNullOrEmpty(_state.LocalRepoPath) ? "" : " · a vigiar repo local") +
+        (_state.LastError is null ? "" : $" · {_state.LastError}");
+
+    string LogTitle => _logJob is not null && Queue.Get(_logJob) is { } j
+        ? $"Log · {j.Env} · {Ui.Action(j.Kind)} · {Ui.Status(j.Status)}"
+        : "Log";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null && (await AuthState).User.Identity?.Name is { } name)
+            _defaultPassword = Users.Get(name)?.IsDefaultPassword == true;
+        await RefreshAsync();
+        _ = WatchAsync(_cts.Token);
+    }
+
+    // Recarrega quando o servico avisa de uma alteracao (Notifier) e, de qualquer modo, a cada 5 s: ha coisas que o
+    // servico nao nota (ex.: um site parado a mao no IIS). Entre cargas redesenha a cada segundo (contagens, «ha X s»).
+    async Task WatchAsync(CancellationToken ct)
+    {
+        var seen = Notifier.Version;
+        var loaded = DateTime.UtcNow;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (Notifier.Version == seen) await Notifier.WaitAsync(TimeSpan.FromSeconds(1), ct);
+                if (Notifier.Version != seen || DateTime.UtcNow - loaded >= TimeSpan.FromSeconds(5))
+                {
+                    await Task.Delay(150, ct); // junta os avisos seguidos (cada passo de um deploy e um aviso)
+                    seen = Notifier.Version;
+                    loaded = DateTime.UtcNow;
+                    await InvokeAsync(RefreshAsync);
+                }
+                else await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+    }
+
+    async Task RefreshAsync()
+    {
+        // Uma carga de cada vez: um pedido que chegue durante a carga repete-a no fim.
+        if (_refreshing) { _again = true; return; }
+        _refreshing = true;
+        try
+        {
+            do
+            {
+                _again = false;
+                _state = await Panel.GetStateAsync(_cts.Token);
+                _jobs = Queue.Recent().ToList();
+                NotifyFinished();
+                if (_logJob is not null) await LoadLogAsync();
+            } while (_again);
+            _error = null;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _refreshing = false; }
+        StateHasChanged();
+    }
+
+    void NotifyFinished()
+    {
+        foreach (var j in _jobs)
+        {
+            if (_known.TryGetValue(j.Id, out var before) && before != j.Status && j.Status is JobStatus.Succeeded or JobStatus.Failed)
+            {
+                var ok = j.Status == JobStatus.Succeeded;
+                Snackbar.Add($"{j.Env} · {Ui.Action(j.Kind)} {(ok ? "concluído" : "falhou")}{(j.Summary is null ? "" : $" — {j.Summary}")}",
+                    ok ? Severity.Success : Severity.Error);
+            }
+            _known[j.Id] = j.Status;
+        }
+    }
+
+    async Task FetchAsync()
+    {
+        _fetching = true;
+        try
+        {
+            await Mirror.SyncRemoteAsync(force: true, _cts.Token);
+            await Mirror.SyncLocalAsync(_cts.Token);
+            if (Mirror.LastError is { } err) Snackbar.Add(GitAuth.Friendly(err), Severity.Error);
+            else Snackbar.Add("Remoto e repo local verificados", Severity.Success);
+        }
+        catch (OperationCanceledException) { }
+        finally { _fetching = false; }
+        await RefreshAsync();
+    }
+
+    Task RowClickAsync(TableRowClickEventArgs<Job> e) => e.Item is { } job ? ShowLogAsync(job.Id) : Task.CompletedTask;
+
+    async Task ShowLogAsync(string id)
+    {
+        _logJob = id;
+        _logText = "";
+        _logOpen = true;
+        _scrollLog = true;
+        await LoadLogAsync();
+    }
+
+    async Task LoadLogAsync()
+    {
+        var text = Queue.ReadLog(_logJob!);
+        if (text == _logText) return;
+        // Segue o fim do log, a nao ser que o utilizador tenha subido para ler.
+        if (!_scrollLog) _scrollLog = await JS.InvokeAsync<bool>("ponte.atBottom", "job-log");
+        _logText = text;
+    }
+
+    void LogOpenChanged(bool open)
+    {
+        _logOpen = open;
+        if (open) return;
+        _logJob = null;
+        _logText = "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollLog || !_logOpen) return;
+        _scrollLog = false;
+        await JS.InvokeVoidAsync("ponte.toBottom", "job-log");
+    }
+
+    public void Dispose() => _cts.Cancel();
+}

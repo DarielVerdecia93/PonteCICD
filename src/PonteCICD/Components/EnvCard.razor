@@ -1,0 +1,171 @@
+@inject PanelService Panel
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<MudPaper Outlined="true" Class="@($"ambiente pa-4 {(Busy ? "ocupado" : "")}")">
+    <div class="ambiente-topo">
+        <div class="ambiente-titulo">
+            <span class="ponto @(Env.Running ? "on" : "")" title="@(Env.Running ? "Em execução" : "Parado")"></span>
+            <MudText Typo="Typo.h6" Class="nome">@Env.Name</MudText>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(Local ? Color.Secondary : Color.Default)" Class="mono"
+                     title="@($"Origem: {(Local ? "o meu repositório local" : "remoto")}")">@Env.Branch@(Local ? " · local" : "")</MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@Env.Configuration</MudChip>
+            @if (Env.Head is null)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Error">a branch já não existe</MudChip>
+            }
+            else if (UpToDate)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success">atualizado</MudChip>
+            }
+            else if (Env.Deployed is not null)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">desatualizado</MudChip>
+            }
+        </div>
+        <div class="ambiente-acoes">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="Busy" StartIcon="@Icons.Material.Filled.RocketLaunch"
+                       OnClick="() => RunAsync(JobKind.Deploy)">@(UpToDate ? "Reimplantar" : "Implantar agora")</MudButton>
+            <MudTooltip Text="@(Env.Running ? "Parar" : "Iniciar")">
+                <MudIconButton Icon="@(Env.Running ? Icons.Material.Filled.Stop : Icons.Material.Filled.PlayArrow)" Disabled="Busy"
+                               aria-label="@(Env.Running ? "Parar" : "Iniciar")" OnClick="() => RunAsync(Env.Running ? JobKind.Stop : JobKind.Start)" />
+            </MudTooltip>
+            <MudTooltip Text="Reiniciar">
+                <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" Disabled="Busy" aria-label="Reiniciar" OnClick="() => RunAsync(JobKind.Restart)" />
+            </MudTooltip>
+            <MudMenu @ref="_menu" Icon="@Icons.Material.Filled.MoreVert" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" AriaLabel="Mais ações">
+                <MudMenuItem Icon="@Icons.Material.Outlined.SettingsBackupRestore" Disabled="@(Busy || Env.Backups.Count == 0)" OnClick="RestoreAsync">
+                    Restaurar backup…
+                </MudMenuItem>
+                @* Ainda nao migrados: abrem o painel classico. *@
+                <MudMenuItem Icon="@Icons.Material.Outlined.Edit" Href="/">Editar branch ou configuração</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Outlined.ContentCopy" Href="/">Duplicar ambiente</MudMenuItem>
+                <MudDivider />
+                <MudMenuItem Icon="@Icons.Material.Outlined.Delete" IconColor="Color.Error" Disabled="Busy" OnClick="DeleteAsync">Eliminar ambiente</MudMenuItem>
+            </MudMenu>
+        </div>
+    </div>
+
+    <div class="linhas">
+        <span>URL</span>
+        <span>
+            <MudLink Href="@Env.Url" Target="_blank">@Env.Url</MudLink>
+            @if (!string.IsNullOrWhiteSpace(Env.HostHeader))
+            {
+                <span class="sec"> · por porto: <MudLink Href="@Env.LocalUrl" Target="_blank">@Env.LocalUrl</MudLink></span>
+            }
+        </span>
+        <span>Implantado</span>
+        <span>
+            @if (Env.Deployed is { } d)
+            {
+                <code>@d.ShortCommit</code> @d.Subject <span class="sec">· @Ui.Ago(d.DeployedAt)</span>
+            }
+            else
+            {
+                <span class="sec">nada ainda</span>
+            }
+        </span>
+        <span>Último commit</span>
+        <span>
+            @if (Env.Head is { } h)
+            {
+                <code>@Ui.Short(h.Commit)</code> @h.Subject <span class="sec">· @h.Author · @Ui.Ago(h.Date)</span>
+            }
+            else
+            {
+                <span class="sec">—</span>
+            }
+        </span>
+        <span>Deploy automático</span>
+        <span>
+            <MudSwitch T="bool" Value="Env.AutoDeploy" ValueChanged="SetAutoAsync" Color="Color.Primary" Size="Size.Small"
+                       Label="@(Env.AutoDeploy ? "ativo" : "manual")" Class="interruptor" />
+        </span>
+    </div>
+
+    @if (Env.Pending.Count > 0)
+    {
+        <MudButton Variant="Variant.Text" Color="Color.Warning" Size="Size.Small" Class="mt-2"
+                   StartIcon="@(_pendingOpen ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                   OnClick="() => _pendingOpen = !_pendingOpen">
+            @Env.Pending.Count@(Env.Pending.Count >= 30 ? "+" : "") commit(s) por implantar
+        </MudButton>
+        <MudCollapse Expanded="_pendingOpen">
+            <ul class="pendentes">
+                @foreach (var c in Env.Pending)
+                {
+                    <li><code>@Ui.Short(c.Commit)</code> @c.Subject <span class="sec">· @c.Author · @Ui.Ago(c.Date)</span></li>
+                }
+            </ul>
+        </MudCollapse>
+    }
+
+    @if (Env.Job is { } job)
+    {
+        <div class="estado em-curso">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="rodinha" />
+            <span>
+                <b>@Ui.Action(job.Kind)</b> · @(job.Status == JobStatus.Queued ? "Na fila" : job.Step ?? "A iniciar")
+                @if (job.Commit is not null)
+                {
+                    <span> · <code>@Ui.Short(job.Commit)</code> @job.Subject</span>
+                }
+            </span>
+            <MudLink Class="ml-auto" OnClick="() => ShowLog.InvokeAsync(job.Id)">ver log</MudLink>
+        </div>
+    }
+    else if (Env.AutoDeployAt is { } at)
+    {
+        <div class="estado espera">
+            <MudIcon Icon="@Icons.Material.Outlined.HourglassTop" Size="Size.Small" />
+            <span>Alterações detetadas · deploy automático dentro de <b>@Math.Max(0, (int)Math.Round((at - DateTimeOffset.Now).TotalSeconds))s</b> (à espera de mais commits)</span>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public EnvState Env { get; set; } = default!;
+    /// <summary>Something was queued or changed: the page reloads the state.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback<string> ShowLog { get; set; }
+
+    bool _pendingOpen;
+    MudMenu? _menu;
+
+    bool Busy => Env.Job is not null;
+    bool Local => Env.Source == BranchSource.Local;
+    bool UpToDate => Env.Deployed is not null && Env.Head is not null && Env.Deployed.Commit == Env.Head.Commit;
+
+    async Task RunAsync(JobKind kind, string? arg = null)
+    {
+        var r = Panel.Enqueue(Env.Name, kind, arg);
+        if (r.NotFound) Snackbar.Add($"O ambiente {Env.Name} já não existe.", Severity.Warning);
+        else if (r.Conflict is not null) Snackbar.Add(r.Conflict, Severity.Error);
+        await Changed.InvokeAsync();
+    }
+
+    async Task SetAutoAsync(bool on)
+    {
+        Panel.SetAutoDeploy(Env.Name, on);
+        await Changed.InvokeAsync();
+    }
+
+    // O menu so se fecha quando o clique termina, e o clique espera pelo dialogo: fecha-se antes de o abrir.
+    async Task RestoreAsync()
+    {
+        if (_menu is not null) await _menu.CloseMenuAsync();
+        var parameters = new DialogParameters<RestoreDialog> { { x => x.Backups, Env.Backups } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<RestoreDialog>($"Restaurar backup · {Env.Name}", parameters, options);
+        if (await dialog.Result is { Canceled: false, Data: string backup }) await RunAsync(JobKind.Rollback, backup);
+    }
+
+    async Task DeleteAsync()
+    {
+        if (_menu is not null) await _menu.CloseMenuAsync();
+        var ok = await Dialogs.ShowMessageBoxAsync($"Eliminar o ambiente {Env.Name}?",
+            "O site é parado e a sua pasta e backups são apagados.", yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok == true) await RunAsync(JobKind.Purge);
+    }
+}

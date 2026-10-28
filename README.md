@@ -70,6 +70,19 @@ O painel exige início de sessão e **não existe nenhuma conta nem palavra-pass
 - Por omissão o painel só aceita ligações locais. Se o expuser na rede, use HTTPS (proxy inverso).
 - Instalações de versões anteriores podem ter ainda a conta predefinida antiga: o painel avisa até a palavra-passe ser alterada.
 
+## Painel novo (pré-visualização)
+
+Em **`/v2`** (ex.: `http://admin-pontecicd/v2`; também no menu do utilizador → *Novo painel (pré-visualização)*) está a vista
+principal refeita em **Blazor Server + MudBlazor**, ao lado do painel atual, para a avaliar antes de migrar o resto.
+
+- Usa a mesma sessão: sem sessão, abre o login do painel atual e volta a `/v2`. Com a página aberta, a sessão é verificada
+  a cada minuto (uma palavra-passe alterada noutro sítio também a termina aqui).
+- Já tem: ambientes (implantar, iniciar/parar, reiniciar, restaurar backup, eliminar, deploy automático), commits por implantar,
+  execuções e o log ao vivo. Criar, editar e duplicar ambientes, o acesso ao repositório, as regras de publicação, a frequência
+  de atualização e a palavra-passe continuam no painel atual (os botões levam lá).
+- Tema claro/escuro segundo o Windows. Se o serviço reiniciar (ex.: numa atualização), a página mostra
+  «A ligar novamente ao serviço…» e recarrega sozinha quando ele volta.
+
 ## Primeira configuração: acesso ao repositório
 
 Num PC novo só são precisos **dois dados**. Abra o painel, inicie sessão e abra o menu do utilizador → **Acesso ao repositório**

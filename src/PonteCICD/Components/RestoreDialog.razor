@@ -1,0 +1,25 @@
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="string" @bind-Value="_backup" Label="Backup" Variant="Variant.Outlined" Dense="true">
+            @foreach (var b in Backups)
+            {
+                <MudSelectItem Value="@b.Name">@Ui.Date(b.Date) · @Ui.Short(b.Commit) · @b.Reason</MudSelectItem>
+            }
+        </MudSelect>
+        <MudText Typo="Typo.body2" Class="mt-3 mud-text-secondary">A versão atual é guardada antes num zip.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_backup is null"
+                   OnClick="() => Dialog.Close(DialogResult.Ok(_backup))">Restaurar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public List<BackupInfo> Backups { get; set; } = [];
+
+    string? _backup;
+
+    protected override void OnInitialized() => _backup = Backups.FirstOrDefault()?.Name;
+}
