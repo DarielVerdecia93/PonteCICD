@@ -116,7 +116,7 @@ api.MapGet("/state", async (Mirror mirror, JobQueue queue, Poller poller, IisSta
     {
         mirror.LastCheck,
         mirror.LastChange,
-        mirror.LastError,
+        LastError = mirror.LastError is null ? null : GitAuth.Friendly(mirror.LastError),
         cfg.PollIntervalSec,
         cfg.QuietSec,
         cfg.LocalRepoPath,
@@ -142,7 +142,7 @@ api.MapGet("/project", () =>
     return new { c.RepoUrl, c.SolutionFile, c.ProjectFile, c.PackagesSource, c.LocalRepoPath, HasToken = gitAuth.HasToken, TokenUser = gitAuth.User };
 });
 
-api.MapPut("/project", (ProjectRequest req, Mirror mirror, Notifier notifier) =>
+api.MapPut("/project", async (ProjectRequest req, Mirror mirror, Notifier notifier) =>
 {
     var url = (req.RepoUrl ?? "").Trim();
     if (url.Length > 0 && !Regex.IsMatch(url, @"^https?://", RegexOptions.IgnoreCase))
@@ -153,17 +153,27 @@ api.MapPut("/project", (ProjectRequest req, Mirror mirror, Notifier notifier) =>
     store.Update(c =>
     {
         c.RepoUrl = url;
-        c.SolutionFile = (req.SolutionFile ?? "").Trim();
-        c.ProjectFile = (req.ProjectFile ?? "").Trim();
-        c.PackagesSource = (req.PackagesSource ?? "").Trim();
-        c.LocalRepoPath = (req.LocalRepoPath ?? "").Trim();
+        // Opcionais (so no ci.json): o painel nao os envia, por isso so se alteram quando vierem no pedido.
+        if (req.SolutionFile is not null) c.SolutionFile = req.SolutionFile.Trim();
+        if (req.ProjectFile is not null) c.ProjectFile = req.ProjectFile.Trim();
+        if (req.PackagesSource is not null) c.PackagesSource = req.PackagesSource.Trim();
+        if (req.LocalRepoPath is not null) c.LocalRepoPath = req.LocalRepoPath.Trim();
     });
     if (req.ClearToken == true) gitAuth.Clear();
     else if (!string.IsNullOrWhiteSpace(req.Token)) gitAuth.Save(req.TokenUser, req.Token);
-    // Verifica o remoto ja com a nova configuracao (o resultado aparece no painel).
-    _ = Task.Run(async () => { try { await mirror.SyncRemoteAsync(force: true, CancellationToken.None); } catch (Exception) { /* fica em lastError */ } });
+    // Le o remoto ja com a nova configuracao e responde com o resultado (quantas branches, ou o erro real).
+    // Se demorar mais de 60 s (repositorio grande) segue em segundo plano e o painel mostra o progresso.
+    var sync = Task.Run(async () => { try { await mirror.SyncRemoteAsync(force: true, CancellationToken.None); } catch (Exception) { /* fica em lastError */ } });
+    var finished = await Task.WhenAny(sync, Task.Delay(TimeSpan.FromSeconds(60)));
     notifier.Changed();
-    return Results.Ok();
+    if (finished != sync) return Results.Ok(new { pending = true, branches = 0, error = (string?)null });
+    var syncError = string.IsNullOrWhiteSpace(url) ? null : mirror.LastError;
+    return Results.Ok(new
+    {
+        pending = false,
+        branches = mirror.Branches.Count(b => b.Source == BranchSource.Remote),
+        error = syncError is null ? null : GitAuth.Friendly(syncError, req.Token),
+    });
 });
 
 api.MapPost("/project/test", async (ProjectRequest req, CancellationToken ct) =>
@@ -176,15 +186,7 @@ api.MapPost("/project/test", async (ProjectRequest req, CancellationToken ct) =>
     try
     {
         var (code, output) = await Git.RunAsync(["ls-remote", "--heads", url], null, cts.Token, secret, url);
-        var clean = GitAuth.Redact(output, secret?.Token).Trim();
-        if (code != 0)
-        {
-            // git sem token valido acaba em "could not read Username": traduz para algo acionavel.
-            var hint = clean.Contains("terminal prompts disabled") || clean.Contains("Authentication failed") || clean.Contains("403") || clean.Contains("401")
-                ? "Token em falta, invalido ou sem permissao de leitura neste repositorio (ou o URL esta errado)."
-                : (clean.Length > 400 ? clean[..400] : clean);
-            return Results.BadRequest($"A ligacao falhou: {hint}");
-        }
+        if (code != 0) return Results.BadRequest($"A ligacao falhou: {GitAuth.Friendly(output, secret?.Token)}");
         return Results.Ok(new { branches = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length });
     }
     catch (OperationCanceledException)
@@ -215,10 +217,10 @@ api.MapPost("/fetch", async (Mirror mirror, CancellationToken ct) =>
 {
     await mirror.SyncRemoteAsync(force: true, ct);
     await mirror.SyncLocalAsync(ct);
-    return Results.Ok(new { mirror.LastCheck, mirror.LastError });
+    return Results.Ok(new { mirror.LastCheck, LastError = mirror.LastError is null ? null : GitAuth.Friendly(mirror.LastError) });
 });
 
-api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
+api.MapPost("/envs", async (EnvRequest req, Mirror mirror, JobQueue queue, CancellationToken ct) =>
 {
     var name = (req.Name ?? "").Trim().ToLowerInvariant();
     if (!Regex.IsMatch(name, "^[a-z0-9][a-z0-9-]{0,39}$"))
@@ -238,6 +240,23 @@ api.MapPost("/envs", (EnvRequest req, Mirror mirror, JobQueue queue) =>
     var source = req.Source ?? template?.Source ?? BranchSource.Remote;
     if (string.IsNullOrWhiteSpace(branch) || mirror.Find(branch, source) is null)
         return Results.BadRequest($"O branch '{branch}' nao existe ({source}).");
+
+    // Solucao e projeto web: se nao estao no ci.json procuram-se no proprio branch (nao e preciso indicar nada).
+    if (string.IsNullOrWhiteSpace(cfg0.ProjectFile))
+    {
+        var found = await mirror.DetectProjectAsync(branch, source, ct);
+        if (found?.Project is null)
+            return Results.BadRequest($"Nao foi encontrado nenhum projeto web (.csproj de ASP.NET) no branch '{branch}'. " +
+                "Se o projeto tem uma estrutura invulgar, indique 'projectFile' (e 'solutionFile') no ci.json.");
+        store.Update(c =>
+        {
+            if (string.IsNullOrWhiteSpace(c.ProjectFile))
+            {
+                c.ProjectFile = found.Project;
+                if (string.IsNullOrWhiteSpace(c.SolutionFile)) c.SolutionFile = found.Solution ?? "";
+            }
+        });
+    }
 
     // Sin ruta explicita se usa la convencion por defecto C:\inetpub\wwwroot\deploys\<env> (dentro del
     // arbol de IIS), y se guarda en ci.json para que servicio y engine resuelvan la misma carpeta.

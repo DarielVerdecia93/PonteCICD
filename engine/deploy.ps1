@@ -51,7 +51,9 @@ try {
     }
     $msbuild = Get-MSBuildPath
     Write-Ok "MSBuild: $msbuild"
-    & $msbuild (Join-Path $srcRoot $Cfg.solutionFile) /nologo /v:quiet /t:Restore /p:RestorePackagesConfig=true | Out-Host
+    # Sem .sln (ou sem solucao detetada) restaura-se a partir do proprio projeto web.
+    $restoreTarget = if ($Cfg.solutionFile) { $Cfg.solutionFile } else { $Cfg.projectFile }
+    & $msbuild (Join-Path $srcRoot $restoreTarget) /nologo /v:quiet /t:Restore /p:RestorePackagesConfig=true | Out-Host
     if ($LASTEXITCODE) { Write-Warn 'A restauracao de pacotes NuGet falhou; tenta-se compilar com os pacotes existentes.' }
 
     # ------------------------------------------------------------ 2. build + publish
