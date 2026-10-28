@@ -1,7 +1,7 @@
 ﻿; Instalador de Ponte CI/CD (Inno Setup 6).
 ; Compilar desde la raiz del repo, tras publicar el servicio en artifacts\service:
-;   iscc /DAppVersion=1.2.3 installer\PonteCI.iss
-; Genera artifacts\PonteCI-Setup-<version>.exe
+;   iscc /DAppVersion=1.2.3 installer\PonteCICD.iss
+; Genera artifacts\PonteCICD-Setup-<version>.exe
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -11,8 +11,12 @@
 AppId={{40C18D9B-198C-4E3B-9573-4389408F3D04}
 AppName=Ponte CI/CD
 AppVersion={#AppVersion}
-AppPublisher=Ambisig
-DefaultDirName=C:\PonteCI
+AppPublisher=Magia Technologies Labs
+AppCopyright=Copyright (C) Magia Technologies Labs
+VersionInfoCompany=Magia Technologies Labs
+VersionInfoProductName=Ponte CI/CD
+VersionInfoDescription=Instalador do Ponte CI/CD
+DefaultDirName=C:\PonteCICD
 DisableDirPage=no
 DefaultGroupName=Ponte CI-CD
 DisableProgramGroupPage=yes
@@ -20,12 +24,12 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=artifacts
-OutputBaseFilename=PonteCI-Setup-{#AppVersion}
+OutputBaseFilename=PonteCICD-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=installer\ponteci.ico
-UninstallDisplayIcon={app}\service\PonteCI.exe
+SetupIconFile=installer\pontecicd.ico
+UninstallDisplayIcon={app}\pontecicd.ico
 UninstallDisplayName=Ponte CI/CD
 SourceDir=..
 
@@ -40,12 +44,13 @@ Name: "openpanel"; Description: "Abrir o painel no fim da instalação"; Flags: 
 Source: "artifacts\service\*"; DestDir: "{app}\service"; Flags: recursesubdirs ignoreversion
 Source: "engine\*"; DestDir: "{app}\engine"; Excludes: "Web.local.config"; Flags: recursesubdirs ignoreversion
 Source: "install-service.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "installer\pontecicd.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 ; Configuração base: só na primeira instalação (as atualizações não pisam os ambientes do utilizador).
 Source: "installer\ci.template.json"; DestDir: "{app}"; DestName: "ci.json"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
-Name: "{group}\Painel Ponte CI/CD"; Filename: "http://localhost:5080"
+Name: "{group}\Painel Ponte CI/CD"; Filename: "http://localhost:5080"; IconFilename: "{app}\pontecicd.ico"
 Name: "{group}\Desinstalar Ponte CI/CD"; Filename: "{uninstallexe}"
 
 [UninstallRun]
@@ -94,8 +99,9 @@ var
   Code: Integer;
 begin
   // Atualização: pára o serviço para poder substituir os ficheiros.
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop PonteCICD', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop LegadosCI', '', SW_HIDE, ewWaitUntilTerminated, Code); // nomes antigos
   Exec(ExpandConstant('{sys}\sc.exe'), 'stop PonteCI', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Exec(ExpandConstant('{sys}\sc.exe'), 'stop LegadosCI', '', SW_HIDE, ewWaitUntilTerminated, Code); // nome antigo
   Sleep(3000);
   Result := '';
 end;

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace PonteCI;
+namespace PonteCICD;
 
 public static class BranchSource
 {
@@ -52,6 +52,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
         {
             var cfg = store.Load();
             var repoUrl = ExpandEnvVars(cfg.RepoUrl);
+            if (string.IsNullOrWhiteSpace(repoUrl)) return Fail("Repositorio nao configurado: indique o URL e o token em «Projeto e repositorio» no painel.");
             if (!Directory.Exists(store.MirrorDir))
             {
                 var (code, output) = await Git.RunAsync(["clone", "--bare", "--quiet", repoUrl, store.MirrorDir], null, ct);
@@ -195,7 +196,7 @@ public sealed class Mirror(CiStore store, Notifier notifier, ILogger<Mirror> log
 
 public static class Git
 {
-    public static async Task<(int Code, string Output)> RunAsync(string[] args, string? gitDir, CancellationToken ct)
+    public static async Task<(int Code, string Output)> RunAsync(string[] args, string? gitDir, CancellationToken ct, GitSecret? secret = null, string? url = null)
     {
         var psi = new ProcessStartInfo("git")
         {
@@ -210,6 +211,7 @@ public static class Git
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         psi.Environment["GCM_INTERACTIVE"] = "never";
+        GitAuth.Apply(psi, url, secret);
 
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync(ct);

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace PonteCI;
+namespace PonteCICD;
 
 public sealed class CiConfig
 {

@@ -1,7 +1,7 @@
-using PonteCI;
+using PonteCICD;
 using Xunit;
 
-namespace PonteCI.Tests;
+namespace PonteCICD.Tests;
 
 public class EnvValidationTests
 {

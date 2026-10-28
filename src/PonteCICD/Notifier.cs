@@ -1,4 +1,4 @@
-namespace PonteCI;
+namespace PonteCICD;
 
 /// <summary>Signals "something changed" to the panel (Server-Sent Events) so it refreshes at once.</summary>
 public sealed class Notifier

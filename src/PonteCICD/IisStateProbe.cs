@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace PonteCI;
+namespace PonteCICD;
 
 /// <summary>
 /// Real IIS site/pool state for the panel and the poller, read from engine\sitestate.ps1.

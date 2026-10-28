@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace PonteCI;
+namespace PonteCICD;
 
 /// <summary>
 /// Detects new commits and decides when to deploy:

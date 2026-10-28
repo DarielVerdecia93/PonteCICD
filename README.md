@@ -5,6 +5,8 @@ nem na base de dados (a BD é administrada por outra parte: aqui só se configur
 
 Painel: **http://localhost:5080**
 
+© Magia Technologies Labs
+
 ## Como funciona
 
 - Cada **ambiente** = uma branch + uma porta (8090, 8091, ...) + uma configuração de compilação (`Desenvolvimento`, `Qualidade`...).
@@ -18,7 +20,7 @@ Painel: **http://localhost:5080**
   commits pendentes e avisos no fim de cada execução.
 - A compilação dinâmica do ASP.NET faz-se em `envs\<ambiente>\aspnet-temp` em vez de `%TEMP%`, onde
   o **Smart App Control** bloqueia as DLL geradas (erro 0x800711C7).
-- Antivírus (Kaspersky): excluir esta pasta, `service\PonteCI.exe` e `iisexpress.exe`, ou bloqueará os processos do CI.
+- Antivírus (Kaspersky): excluir esta pasta, `service\PonteCICD.exe` e `iisexpress.exe`, ou bloqueará os processos do CI.
 - Cada deploy:
   1. exporta o commit com `git archive` (código limpo, o repo de trabalho não é tocado);
   2. compila e publica com MSBuild (`/t:WebPublish`), sem `DBScripts` e com os ficheiros extra de `includeInPublish`;
@@ -28,6 +30,21 @@ Painel: **http://localhost:5080**
 - **Rollback**: restaura qualquer zip. Antes guarda também a versão atual, pelo que um rollback pode ser desfeito.
 - Guardam-se os últimos `keepBackups` zips por ambiente. `UploadFiles` (dados de utilizadores) não é tocado nem entra nos zips.
 - Os jobs executam-se um de cada vez; cada execução fica em `runs\` (json + log), visível no painel.
+
+## Primeira configuração: projeto e autenticação
+
+Num PC novo, abra o painel e carregue em **Projeto e acesso** (ou no aviso «Configurar projeto e acesso»):
+
+1. **URL do repositório** (HTTPS), de **Azure DevOps** (`https://dev.azure.com/org/projeto/_git/repo`) ou de **GitHub** (`https://github.com/org/repo.git`).
+2. **Token de acesso (PAT)**:
+   - Azure DevOps: *User settings → Personal access tokens*, permissão **Code (Read)**;
+   - GitHub: *Settings → Developer settings → Personal access tokens*, com leitura do repositório.
+3. **Solução (.sln)** e **projeto web (.csproj)** a publicar (relativos à raiz do repositório); opcionalmente a pasta de pacotes NuGet e o repositório local.
+4. **Testar ligação** confirma que o token e o URL funcionam; depois **Guardar**.
+
+O token fica **cifrado nesta máquina** (DPAPI, em `secrets\git-credential.bin`) e nunca é escrito no `ci.json` nem no URL. É enviado ao git
+como cabeçalho HTTP limitado ao servidor do repositório, tanto pelo serviço como pelo motor de deploy. Funciona com qualquer conta do serviço
+(incluindo `LocalSystem`), sem precisar de configurar o git à mão. Requer git 2.31 ou superior.
 
 ## Criar um novo ambiente
 
@@ -50,8 +67,8 @@ envs\<ambiente>\backups    zips <ambiente>_<data>_<commit>_<motivo>.zip
 envs\<ambiente>\Web.local.config   (opcional) transformação própria do ambiente
 mirror.git                 mirror do remoto
 runs\                      histórico de execuções
-service\                   PonteCI publicado (serviço do Windows)
-src\PonteCI              código do serviço (.NET 10)
+service\                   PonteCICD publicado (serviço do Windows)
+src\PonteCICD              código do serviço (.NET 10)
 ```
 
 ## Base de dados administrada
@@ -61,15 +78,15 @@ Copie `engine\Web.local.config.example` como `Web.local.config` (comum) ou como
 
 ## Instalar com o instalador (recomendado)
 
-Descarregue `PonteCI-Setup-<versão>.exe` da página de [Releases](https://github.com/DarielVerdecia93/PonteCICD/releases)
+Descarregue `PonteCICD-Setup-<versão>.exe` da página de [Releases](https://github.com/DarielVerdecia93/PonteCICD/releases)
 e execute-o como administrador. O instalador:
 
 1. copia o serviço (autocontido: **não precisa de .NET instalado**), o motor `engine\` e o `install-service.ps1`
-   para `C:\PonteCI` (pasta editável);
+   para `C:\PonteCICD` (pasta editável);
 2. cria um `ci.json` base apenas na primeira instalação (as atualizações **não** tocam nos ambientes existentes);
 3. opcionalmente ativa as funcionalidades do IIS que faltem;
 4. pergunta a conta do serviço — `LocalSystem` (sem palavra-passe) ou a sua conta do Windows (usa as suas credenciais de git) —,
-   adiciona-a aos Administradores, regista o serviço `PonteCI`, configura o reinício automático e arranca-o;
+   adiciona-a aos Administradores, regista o serviço `PonteCICD`, configura o reinício automático e arranca-o;
 5. abre o painel em **http://localhost:5080**.
 
 Para atualizar, execute o instalador da nova versão por cima. Para desinstalar, use «Aplicações» do Windows
@@ -90,8 +107,8 @@ git push origin v1.0.0
 Para compilar o instalador localmente (requer [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
 
 ```powershell
-dotnet publish src\PonteCI -c Release -r win-x64 --self-contained -o artifacts\service
-iscc /DAppVersion=1.0.0 installer\PonteCI.iss      # gera artifacts\PonteCI-Setup-1.0.0.exe
+dotnet publish src\PonteCICD -c Release -r win-x64 --self-contained -o artifacts\service
+iscc /DAppVersion=1.0.0 installer\PonteCICD.iss      # gera artifacts\PonteCICD-Setup-1.0.0.exe
 ```
 
 ## Instalar como serviço (manual)
@@ -116,7 +133,7 @@ verifica o IIS e configura o reinício automático em caso de falha.
 1. Publicar o serviço (na raiz do repositório):
 
    ```powershell
-   dotnet publish src\PonteCI -c Release -o service
+   dotnet publish src\PonteCICD -c Release -o service
    ```
 
 2. Abrir o PowerShell **como administrador** e instalar:
@@ -143,19 +160,19 @@ verifica o IIS e configura o reinício automático em caso de falha.
 ### Gerir o serviço
 
 ```powershell
-Get-Service PonteCI                 # estado
-Restart-Service PonteCI             # reiniciar
+Get-Service PonteCICD                 # estado
+Restart-Service PonteCICD             # reiniciar
 .\install-service.ps1 -Uninstall      # desinstalar
 ```
 
-Sem o instalar, também se pode executar numa consola: `.\service\PonteCI.exe`.
+Sem o instalar, também se pode executar numa consola: `.\service\PonteCICD.exe`.
 
 ## Atualizar o serviço após alterar o seu código
 
 ```powershell
-Stop-Service PonteCI
-dotnet publish src\PonteCI -c Release -o service
-Start-Service PonteCI
+Stop-Service PonteCICD
+dotnet publish src\PonteCICD -c Release -o service
+Start-Service PonteCICD
 ```
 
 ## Utilização a partir da consola (sem painel)

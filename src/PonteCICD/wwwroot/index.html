@@ -189,6 +189,11 @@
   @media (max-width: 560px) { .foot-grid > * { grid-column: 1 / -1 !important; } }
 
   #settings { width: min(420px, calc(100vw - 32px)); }
+  #project { width: min(620px, calc(100vw - 32px)); }
+  #project .foot-grid { grid-template-columns: 1fr; }
+  #project .hint { display: block; margin-top: 2px; }
+  #projectMsg { font-size: 13px; min-height: 18px; }
+  #projectMsg.ok { color: var(--ok); }
   #settings .foot-grid { grid-template-columns: 1fr; }
 
   #toasts { position: fixed; right: 18px; bottom: 18px; display: grid; gap: 10px; z-index: 10; }
@@ -205,12 +210,14 @@
   <h1>Ponte CI/CD</h1>
   <span class="live" id="live"><i></i><span>a ligar…</span></span>
   <span class="meta" id="meta"></span>
+  <button id="projectBtn" title="Projeto, repositório e token de acesso">Projeto e acesso</button>
   <button id="settingsBtn" title="Frequência de atualização" aria-label="Frequência de atualização">⚙</button>
   <button id="fetch" title="Verificar agora o remoto e o repositório local">Procurar alterações</button>
   <button class="primary" id="newEnv">+ Novo ambiente</button>
 </header>
 <main>
   <div class="card err" id="iisWarn" hidden style="padding:12px 16px"></div>
+  <div class="card" id="projectWarn" hidden style="padding:12px 16px">Ainda não há projeto configurado. <button class="primary" onclick="openProject()">Configurar projeto e acesso</button></div>
   <section>
     <h2>Ambientes</h2>
     <div class="envs" id="envs"></div>
@@ -229,6 +236,7 @@
     <pre class="log" id="log"></pre>
   </section>
 </main>
+<footer style="text-align:center;padding:18px 16px 26px;font-size:12px;color:var(--faint)">Ponte CI/CD · © Magia Technologies Labs</footer>
 
 <dialog id="picker">
   <form method="dialog" id="pickerForm">
@@ -266,6 +274,45 @@
       </div>
     </div>
     <div class="err" id="pickerErr" style="padding:0 16px 12px"></div>
+  </form>
+</dialog>
+
+<dialog id="project">
+  <form method="dialog" id="projectForm">
+    <div class="picker-head"><b>Projeto e acesso ao repositório</b></div>
+    <div class="picker-foot">
+      <div class="foot-grid">
+        <label class="f">URL do repositório (Azure DevOps ou GitHub, HTTPS)
+          <input name="repoUrl" placeholder="https://dev.azure.com/organizacao/projeto/_git/repositorio" autocomplete="off">
+        </label>
+        <label class="f">Token de acesso (PAT)
+          <input name="token" type="password" autocomplete="new-password" placeholder="Cole aqui o token">
+          <span class="hint">Azure DevOps: User settings → Personal access tokens (permissão Code: Read). GitHub: Settings → Developer settings → token com acesso de leitura ao repositório. Fica cifrado nesta máquina; nunca é guardado no ci.json.</span>
+        </label>
+        <label class="f">Utilizador <span class="hint" style="display:inline">(opcional; no Azure DevOps pode ficar vazio)</span>
+          <input name="tokenUser" autocomplete="off">
+        </label>
+        <label class="f">Solução (.sln) <span class="hint" style="display:inline">relativa à raiz do repositório</span>
+          <input name="solutionFile" placeholder="MeuProjeto.sln" autocomplete="off">
+        </label>
+        <label class="f">Projeto web (.csproj) a publicar
+          <input name="projectFile" placeholder="MeuProjeto.Web\MeuProjeto.Web.csproj" autocomplete="off">
+        </label>
+        <label class="f">Pasta de pacotes NuGet <span class="hint" style="display:inline">(opcional)</span>
+          <input name="packagesSource" autocomplete="off">
+        </label>
+        <label class="f">Repositório local para «Meu repo local» <span class="hint" style="display:inline">(opcional)</span>
+          <input name="localRepoPath" placeholder="C:\Users\...\source\repos\MeuProjeto" autocomplete="off">
+        </label>
+      </div>
+      <div id="projectMsg"></div>
+      <div class="foot-actions">
+        <button type="button" id="projectTest">Testar ligação</button>
+        <button type="button" id="projectClearToken" hidden>Remover token</button>
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button class="primary" value="ok">Guardar</button>
+      </div>
+    </div>
   </form>
 </dialog>
 
@@ -413,12 +460,13 @@ async function refresh() {
   try {
     [state, jobs] = await Promise.all([api('GET', '/api/state'), api('GET', '/api/jobs')]);
     renderMeta();
+    $('#projectWarn').hidden = state.projectConfigured !== false;
     const iisWarn = $('#iisWarn');
     iisWarn.hidden = state.iisAvailable !== false;
     if (!iisWarn.hidden)
       iisWarn.innerHTML = `<b>Não foi possível consultar o IIS</b>: os ambientes aparecem como parados mesmo que estejam ativos.` +
         (state.iisError ? `<br>${esc(state.iisError)}` : '') +
-        `<br>Se corre o PonteCI numa consola, abra-a como administrador ou use o serviço do Windows.`;
+        `<br>Se corre o PonteCICD numa consola, abra-a como administrador ou use o serviço do Windows.`;
     $('#envs').innerHTML = state.environments.length
       ? state.environments.map(renderEnv).join('')
       : '<div class="card empty">Ainda não há ambientes.<br><br><button class="primary" onclick="openPicker()">+ Criar o primeiro escolhendo uma branch</button></div>';
@@ -680,6 +728,50 @@ $('#settingsForm').addEventListener('submit', async ev => {
     refresh();
     toast(`Remoto a cada ${fmtSecs(Number(f.poll.value))} · painel a cada ${fmtSecs(uiSecs)}`, 'ok');
   } catch (err) { $('#settingsErr').textContent = err.message; }
+});
+
+// ---------------------------------------------------------------- projeto e token de acesso
+async function openProject() {
+  const f = $('#projectForm');
+  $('#projectMsg').textContent = ''; $('#projectMsg').className = '';
+  try {
+    const p = await api('GET', '/api/project');
+    for (const k of ['repoUrl', 'solutionFile', 'projectFile', 'packagesSource', 'localRepoPath', 'tokenUser']) f[k].value = p[k] ?? '';
+    f.token.value = '';
+    f.token.placeholder = p.hasToken ? 'Token guardado (deixe em branco para o manter)' : 'Cole aqui o token';
+    $('#projectClearToken').hidden = !p.hasToken;
+  } catch (err) { $('#projectMsg').textContent = err.message; }
+  $('#project').showModal();
+}
+$('#projectBtn').onclick = openProject;
+const projectBody = (f, extra = {}) => ({
+  repoUrl: f.repoUrl.value, solutionFile: f.solutionFile.value, projectFile: f.projectFile.value,
+  packagesSource: f.packagesSource.value, localRepoPath: f.localRepoPath.value,
+  tokenUser: f.tokenUser.value, token: f.token.value, ...extra,
+});
+$('#projectTest').onclick = async () => {
+  const msg = $('#projectMsg'); msg.className = ''; msg.textContent = 'A testar a ligação…';
+  try {
+    const r = await api('POST', '/api/project/test', projectBody($('#projectForm')));
+    msg.className = 'ok'; msg.textContent = `Ligação OK (${r.branches} branches visíveis).`;
+  } catch (err) { msg.className = 'err'; msg.textContent = err.message; }
+};
+$('#projectClearToken').onclick = async () => {
+  if (!confirm('Remover o token guardado? O acesso ao repositório deixará de funcionar até indicar outro.')) return;
+  try {
+    await api('PUT', '/api/project', projectBody($('#projectForm'), { token: '', clearToken: true }));
+    toast('Token removido', 'ok'); $('#project').close(); refresh();
+  } catch (err) { $('#projectMsg').className = 'err'; $('#projectMsg').textContent = err.message; }
+};
+$('#projectForm').addEventListener('submit', async ev => {
+  if (ev.submitter?.value !== 'ok') return;
+  ev.preventDefault();
+  try {
+    await api('PUT', '/api/project', projectBody(ev.target));
+    $('#project').close();
+    toast('Projeto guardado: a verificar o repositório…', 'ok');
+    refresh();
+  } catch (err) { $('#projectMsg').className = 'err'; $('#projectMsg').textContent = err.message; }
 });
 
 refresh();

@@ -37,8 +37,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$name = 'PonteCI'
-$exe = Join-Path $PSScriptRoot 'service\PonteCI.exe'
+$name = 'PonteCICD'
+$exe = Join-Path $PSScriptRoot 'service\PonteCICD.exe'
 
 # ---------------------------------------------------------------- helpers
 
@@ -74,7 +74,7 @@ function Add-ToLocalAdministrators([string]$member) {
 # Concede a uma conta o direito "Iniciar sessao como servico" (necessario para arrancar como servico).
 function Grant-ServiceLogonRight([string]$account) {
     $sid = (New-Object Security.Principal.NTAccount ($account -replace '^\.\\', "$env:COMPUTERNAME\")).Translate([Security.Principal.SecurityIdentifier]).Value
-    $tmp = Join-Path $env:TEMP 'ponteci-rights'
+    $tmp = Join-Path $env:TEMP 'pontecicd-rights'
     New-Item -ItemType Directory -Force $tmp | Out-Null
     & secedit /export /cfg "$tmp\current.inf" /areas USER_RIGHTS | Out-Null
     $current = (Select-String "$tmp\current.inf" -Pattern '^SeServiceLogonRight\s*=\s*(.*)$').Matches | ForEach-Object { $_.Groups[1].Value }
@@ -139,14 +139,15 @@ function Test-IisReadiness {
 
 # ---------------------------------------------------------------- (re)instalacao
 
-# Migracao: o servico chamava-se 'LegadosCI' antes de passar a 'PonteCI'. Remove o antigo para nao ficar duplicado.
-$legacy = 'LegadosCI'
-if (Get-Service $legacy -ErrorAction SilentlyContinue) {
-    Stop-Service $legacy -ErrorAction SilentlyContinue
-    & sc.exe delete $legacy | Out-Null
-    Write-Host "Servico antigo $legacy removido (substituido por $name)."
+# Migracao: o servico chamou-se 'LegadosCI' e 'PonteCI' antes de passar a 'PonteCICD'. Remove os antigos para nao ficarem duplicados.
+foreach ($legacy in 'LegadosCI', 'PonteCI') {
+    if (Get-Service $legacy -ErrorAction SilentlyContinue) {
+        Stop-Service $legacy -ErrorAction SilentlyContinue
+        & sc.exe delete $legacy | Out-Null
+        Write-Host "Servico antigo $legacy removido (substituido por $name)."
+    }
+    Get-Process $legacy -ErrorAction SilentlyContinue | Stop-Process -Force
 }
-Get-Process $legacy -ErrorAction SilentlyContinue | Stop-Process -Force
 
 if (Get-Service $name -ErrorAction SilentlyContinue) {
     Stop-Service $name -ErrorAction SilentlyContinue
@@ -156,8 +157,8 @@ if (Get-Service $name -ErrorAction SilentlyContinue) {
 }
 if ($Uninstall) { return }
 
-if (-not (Test-Path $exe)) { throw "Nao existe $exe. Publique antes: dotnet publish src\PonteCI -c Release -o service" }
-Get-Process PonteCI -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia em modo consola, se existir
+if (-not (Test-Path $exe)) { throw "Nao existe $exe. Publique antes: dotnet publish src\PonteCICD -c Release -o service" }
+Get-Process PonteCICD -ErrorAction SilentlyContinue | Stop-Process -Force   # instancia em modo consola, se existir
 
 if ($InstallIis) { Install-Iis }
 
