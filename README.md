@@ -22,7 +22,8 @@ Painel: **http://admin-pontecicd/** (ou **http://localhost:5080/**)
   o **Smart App Control** bloqueia as DLL geradas (erro 0x800711C7).
 - Antivírus (Kaspersky): excluir esta pasta, `service\PonteCICD.exe` e `iisexpress.exe`, ou bloqueará os processos do CI.
 - Cada deploy:
-  1. exporta o commit com `git archive` (código limpo, o repo de trabalho não é tocado);
+  1. exporta o commit com o próprio git (`read-tree` + `checkout-index`, código limpo, o repo de trabalho não é tocado). Não se usa
+     `git archive | tar`: o `tar` do Windows corrompe os nomes de ficheiros com acentos e o MSBuild falhava com «Falha ao copiar o arquivo»;
   2. compila e publica com MSBuild (`/t:WebPublish`), sem `DBScripts` e com os ficheiros extra de `includeInPublish`;
   3. aplica o `Web.local.config` (connection string da BD administrada, URLs...);
   4. pára o site, **guarda a versão atual num zip**, substitui os ficheiros e arranca o site;

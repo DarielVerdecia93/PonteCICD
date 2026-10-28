@@ -35,12 +35,23 @@ try {
 
     $srcRoot = Join-Path $WorkDir 'src'
     Clear-Directory $srcRoot -Keep 'packages'
-    $tar = Join-Path $WorkDir 'src.tar'
-    & git -C $Mirror archive --format=tar -o $tar $commit
-    if ($LASTEXITCODE) { throw 'Falha no git archive.' }
-    & tar -xf $tar -C $srcRoot
-    if ($LASTEXITCODE) { throw 'Nao foi possivel extrair o codigo-fonte.' }
-    Remove-Item $tar -Force
+    # El codigo se exporta con el propio git (read-tree + checkout-index) y NO con "git archive | tar": el tar de Windows
+    # corrompe los nombres con acentos (cada letra acentuada pasa a ser dos caracteres basura), y MSBuild deja de encontrar esos
+    # ficheros ("Falha ao copiar o arquivo ... Nao foi possivel localizar uma parte do caminho"). Git escribe en Unicode y
+    # core.longpaths evita el limite de 260 caracteres. autocrlf=false deja los ficheros tal como estan en el commit.
+    $exportIndex = Join-Path $WorkDir 'export.index'
+    Remove-Item $exportIndex -Force -ErrorAction SilentlyContinue
+    $env:GIT_INDEX_FILE = $exportIndex
+    try {
+        $gitOpts = @('-c', 'core.longpaths=true', '-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false')
+        & git --git-dir=$Mirror @gitOpts read-tree $commit
+        if ($LASTEXITCODE) { throw 'Falha no git read-tree.' }
+        & git --git-dir=$Mirror --work-tree=$srcRoot @gitOpts checkout-index -a -f
+        if ($LASTEXITCODE) { throw 'Nao foi possivel exportar o codigo-fonte.' }
+    } finally {
+        Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue
+        Remove-Item $exportIndex -Force -ErrorAction SilentlyContinue
+    }
     Write-Ok "Commit $short - $subject ($author)"
 
     # packages\ no esta versionado: se siembra (incremental) desde una copia local y se restaura lo que falte.
